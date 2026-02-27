@@ -1,23 +1,27 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import LogoutButton from "@/components/LogoutButton";
 
 export default function PendingPage() {
   const { user, profile, loading } = useAuth();
-  const router = useRouter();
 
   useEffect(() => {
     if (loading) return;
-    if (!user) { router.push("/login"); return; }
+    if (!user) { window.location.href = "/cheesecard/login"; return; }
     if (profile?.role === "member" || profile?.role === "admin") {
-      router.push("/");
+      window.location.href = "/cheesecard/";
     }
-  }, [user, profile, loading, router]);
+  }, [user, profile, loading]);
 
-  if (loading || !user) return null;
+  if (loading || !user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-amber-50">
+        <p className="text-amber-600 animate-pulse">Loading...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-amber-50">
