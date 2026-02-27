@@ -26,22 +26,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const supabase = createClient();
 
     const fetchProfile = async (userId: string) => {
-      const { data } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", userId)
-        .single();
-      setProfile(data as Profile | null);
+      try {
+        const { data } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", userId)
+          .single();
+        setProfile(data as Profile | null);
+      } catch (e) {
+        console.error("fetchProfile error:", e);
+        setProfile(null);
+      }
     };
 
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        await fetchProfile(session.user.id);
-      }
-      setLoading(false);
-    });
-
+    // onAuthStateChange fires INITIAL_SESSION on load, so getSession() is redundant
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
