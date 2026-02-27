@@ -7,10 +7,12 @@ export default function LoginButton() {
   const supabase = createClient();
 
   const signInWithGoogle = async () => {
+    // Derive base path dynamically so it works for any deployment (GitHub Pages /cheesecard, localhost, etc.)
+    const base = window.location.pathname.split("/").slice(0, 2).join("/");
     await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
+        redirectTo: `${window.location.origin}${base}/auth/callback`,
       },
     });
   };
