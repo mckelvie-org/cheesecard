@@ -1,19 +1,17 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import Nav from "@/components/Nav";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { user, profile, loading } = useAuth();
-  const router = useRouter();
 
   useEffect(() => {
     if (loading) return;
-    if (!user) { router.push("/login"); return; }
-    if (!profile || profile.role === "pending") { router.push("/pending"); return; }
-  }, [user, profile, loading, router]);
+    if (!user) { window.location.href = "/cheesecard/login"; return; }
+    if (!profile || profile.role === "pending") { window.location.href = "/cheesecard/pending"; return; }
+  }, [user, profile, loading]);
 
   if (loading || !user || !profile || profile.role === "pending") {
     return (

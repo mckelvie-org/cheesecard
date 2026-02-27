@@ -7,7 +7,7 @@ export default function NavSignOut() {
   const supabase = createClient();
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    try { await supabase.auth.signOut(); } catch (_) {}
     window.location.href = "/cheesecard/login";
   };
 
