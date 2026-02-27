@@ -1,13 +1,15 @@
 "use client";
 
+import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 
 export default function LoginButton() {
   const supabase = createClient();
+  const [signingIn, setSigningIn] = useState(false);
 
   const signInWithGoogle = async () => {
-    // Derive base path dynamically so it works for any deployment (GitHub Pages /cheesecard, localhost, etc.)
+    setSigningIn(true);
     const base = window.location.pathname.split("/").slice(0, 2).join("/");
     await supabase.auth.signInWithOAuth({
       provider: "google",
@@ -15,17 +17,20 @@ export default function LoginButton() {
         redirectTo: `${window.location.origin}${base}/auth/callback`,
       },
     });
+    // If we get here OAuth redirect didn't happen
+    setSigningIn(false);
   };
 
   return (
     <Button
       onClick={signInWithGoogle}
+      disabled={signingIn}
       className="w-full flex items-center gap-3 bg-white text-gray-700 border border-gray-300 hover:bg-gray-50"
       variant="outline"
       size="lg"
     >
       <GoogleIcon />
-      Sign in with Google
+      {signingIn ? "Redirecting to Google..." : "Sign in with Google"}
     </Button>
   );
 }

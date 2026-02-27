@@ -39,28 +39,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     };
 
-    // Use getSession() for reliable initial load
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      if (session?.user) await fetchProfile(session.user.id);
-    }).catch(() => {
-      setUser(null);
-      setProfile(null);
-    }).finally(() => {
-      setLoading(false);
-    });
-
-    // Listen for subsequent changes (sign in, sign out, token refresh)
+    // onAuthStateChange fires INITIAL_SESSION immediately from localStorage cache
+    // (no network wait), then TOKEN_REFRESHED after background token refresh.
+    // This is much faster than getSession() which blocks on token refresh.
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === "INITIAL_SESSION") return; // handled by getSession() above
       setUser(session?.user ?? null);
       if (session?.user) {
         await fetchProfile(session.user.id);
       } else {
         setProfile(null);
       }
+      setLoading(false);
     });
 
     return () => subscription.unsubscribe();
