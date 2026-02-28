@@ -3,9 +3,11 @@
  * (backed by Claude Vision) and returns 4 corners in original image pixels,
  * ordered [TL, TR, BR, BL]. Returns null if detection fails.
  *
- * The image is resized to max 1600px on the longest side before upload to
- * limit bandwidth; corners are scaled back to original-image coordinates.
+ * Uses supabase.functions.invoke() so the SDK handles token refresh and auth
+ * headers automatically — avoids stale-JWT issues with raw fetch().
  */
+
+import { createClient } from "@/lib/supabase/client";
 
 /** Resize an image file to fit within maxPx on its longest side. */
 async function resizeImage(
@@ -39,7 +41,6 @@ async function resizeImage(
 
 export async function detectCornersWithAI(
   file: File,
-  accessToken: string,
 ): Promise<[number, number][] | null> {
   try {
     const { blob, scaleX, scaleY } = await resizeImage(file, 1600);
@@ -47,20 +48,16 @@ export async function detectCornersWithAI(
     const form = new FormData();
     form.append("image", new File([blob], "card.jpg", { type: "image/jpeg" }));
 
-    const res = await fetch(
-      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/detect-corners`,
-      { method: "POST", headers: { Authorization: `Bearer ${accessToken}` }, body: form },
-    );
+    // supabase.functions.invoke() handles token refresh and auth headers
+    const { data, error } = await createClient().functions.invoke("detect-corners", { body: form });
 
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      console.error(`detect-corners: HTTP ${res.status}`, body);
+    if (error) {
+      console.error("detect-corners error:", error);
       return null;
     }
-    const data = await res.json();
     console.log("detect-corners response:", data);
     if (data.error || !data.tl || !data.tr || !data.br || !data.bl) {
-      console.error("detect-corners: bad response shape or error field", data);
+      console.error("detect-corners: bad response or error field", data);
       return null;
     }
 
@@ -72,14 +69,13 @@ export async function detectCornersWithAI(
       [Math.round(data.bl[0] * scaleX), Math.round(data.bl[1] * scaleY)],
     ];
 
-    // Sanity-check: the returned quad should have an aspect ratio consistent
-    // with a cheese card (4:7 = 0.571). Generous tolerance covers perspective.
+    // Sanity-check: aspect ratio should be consistent with a cheese card (4:7 = 0.571).
+    // Generous tolerance covers up to ~45° tilt; both portrait and landscape accepted.
     const topW = Math.hypot(corners[1][0] - corners[0][0], corners[1][1] - corners[0][1]);
     const botW = Math.hypot(corners[2][0] - corners[3][0], corners[2][1] - corners[3][1]);
     const lefH = Math.hypot(corners[3][0] - corners[0][0], corners[3][1] - corners[0][1]);
     const rigH = Math.hypot(corners[2][0] - corners[1][0], corners[2][1] - corners[1][1]);
     const ratio = (topW + botW) / (lefH + rigH);
-    // Accept portrait (0.35–0.90) or landscape (1.1–2.9) — card may be rotated
     if (!((ratio >= 0.35 && ratio <= 0.90) || (ratio >= 1.1 && ratio <= 2.9))) {
       console.error(`detect-corners: aspect ratio ${ratio.toFixed(3)} out of range, rejecting`);
       return null;

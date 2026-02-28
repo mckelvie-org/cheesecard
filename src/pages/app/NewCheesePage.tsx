@@ -115,24 +115,16 @@ function CardPhotoStep({
     if (!front || !back) return;
     setExtracting(true);
     try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
       const formData = new FormData();
       formData.append("back", back.file);
       formData.append("front", front.file);
-      const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/extract-metadata`,
-        { method: "POST", headers: { Authorization: `Bearer ${session?.access_token}` }, body: formData }
-      );
-      if (!res.ok) {
-        const body = await res.text().catch(() => "");
-        throw new Error(`HTTP ${res.status}: ${body.slice(0, 200)}`);
-      }
-      const metadata: CheeseMetadata = await res.json();
+      // Use invoke() so the SDK handles token refresh and auth headers
+      const { data: metadata, error } = await createClient().functions.invoke("extract-metadata", { body: formData });
+      if (error) throw error;
       onComplete({ frontFile: front.file, frontUrl: front.url, backFile: back.file, backUrl: back.url }, metadata);
     } catch (err) {
       console.error("extract-metadata failed:", err);
-      toast.error(`Failed to extract metadata: ${err instanceof Error ? err.message : err}`);
+      toast.error(`Failed to extract metadata: ${err instanceof Error ? err.message : String(err)}`);
       onComplete(
         { frontFile: front.file, frontUrl: front.url, backFile: back.file, backUrl: back.url },
         { name: "", country: "", region: "", milk_type: "", description: "", food_pairings: [], wine_pairings: [] }
@@ -251,19 +243,18 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
     setCorners(inset);
 
     // Use Claude Vision for reliable corner detection (handles perspective,
-    // rounded corners, and complex card faces that trip up OpenCV)
-    createClient().auth.getSession().then(({ data: { session } }) => {
-      if (!session) { setDetecting(false); return; }
-      detectCornersWithAI(imageFile, session.access_token).then((detected) => {
-        if (detected && imgRef.current) {
-          const scaleX = imgRef.current.clientWidth / imgRef.current.naturalWidth;
-          const scaleY = imgRef.current.clientHeight / imgRef.current.naturalHeight;
-          const mapped = detected.map(([x, y]) => [x * scaleX, y * scaleY] as [number, number]);
-          cornersRef.current = mapped;
-          setCorners(mapped);
-        }
-        setDetecting(false);
-      });
+    // rounded corners, and complex card faces that trip up OpenCV).
+    // detectCornersWithAI uses supabase.functions.invoke() which handles
+    // token refresh automatically — no manual session management needed.
+    detectCornersWithAI(imageFile).then((detected) => {
+      if (detected && imgRef.current) {
+        const scaleX = imgRef.current.clientWidth / imgRef.current.naturalWidth;
+        const scaleY = imgRef.current.clientHeight / imgRef.current.naturalHeight;
+        const mapped = detected.map(([x, y]) => [x * scaleX, y * scaleY] as [number, number]);
+        cornersRef.current = mapped;
+        setCorners(mapped);
+      }
+      setDetecting(false);
     });
   }, [imageFile]);
 
