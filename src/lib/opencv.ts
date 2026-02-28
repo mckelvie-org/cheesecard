@@ -87,20 +87,23 @@ export async function detectCardCorners(file: File): Promise<[number, number][] 
         cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
         cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
 
-        // Auto-Canny: thresholds based on image median
-        const mean = cv.mean(blurred);
-        const median = mean[0];
-        const low = Math.max(0, 0.33 * median);
-        const high = Math.min(255, 0.66 * median);
+        // Auto-Canny: use mean as proxy for median, derive thresholds
+        const mean = cv.mean(blurred)[0];
+        const high = Math.min(255, Math.max(80, mean * 1.33));
+        const low = high * 0.5;
         cv.Canny(blurred, edges, low, high);
 
-        // Dilate to close gaps (rounded card corners fragment edges)
+        // Dilate to close gaps from rounded card corners
         cv.dilate(edges, dilated, kernel);
 
-        // RETR_EXTERNAL: only outermost contours, prevents internal features matching
+        // RETR_EXTERNAL: only outermost contours — prevents internal card
+        // features (e.g. the photo square on the front face) from matching
         cv.findContours(dilated, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
         const imageArea = procW * procH;
+        // Boundary margin: reject quads whose corners touch the image edges
+        const margin = Math.round(procW * 0.05);
+
         let bestContour: typeof cv.Mat | null = null;
         let bestArea = 0;
 
@@ -119,9 +122,25 @@ export async function detectCardCorners(file: File): Promise<[number, number][] 
           cv.approxPolyDP(contour, approx, 0.02 * perimeter, true);
 
           if (approx.rows === 4 && area > bestArea) {
-            bestContour?.delete();
-            bestArea = area;
-            bestContour = approx;
+            // Reject if any corner is within 5% of image boundary — this
+            // filters out the "entire image outline" false positive
+            let touchesBoundary = false;
+            for (let j = 0; j < 4; j++) {
+              const x = approx.intAt(j, 0);
+              const y = approx.intAt(j, 1);
+              if (x < margin || x > procW - margin || y < margin || y > procH - margin) {
+                touchesBoundary = true;
+                break;
+              }
+            }
+
+            if (!touchesBoundary) {
+              bestContour?.delete();
+              bestArea = area;
+              bestContour = approx;
+            } else {
+              approx.delete();
+            }
           } else {
             approx.delete();
           }
@@ -142,8 +161,7 @@ export async function detectCardCorners(file: File): Promise<[number, number][] 
           ]);
         }
 
-        const ordered = orderPoints(pts);
-        resolve(ordered);
+        resolve(orderPoints(pts));
       } catch {
         resolve(null);
       } finally {

@@ -64,9 +64,7 @@ export default function NewCheesePage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-amber-900">Cheese Details</h1>
-      </div>
+      <h1 className="text-2xl font-bold text-amber-900">Cheese Details</h1>
       <MetadataStep
         tastingId={tastingId!}
         photos={photos!}
@@ -92,8 +90,7 @@ function CardPhotoStep({
   const backInputRef = useRef<HTMLInputElement>(null);
 
   const handlePhotoSelect = useCallback((file: File, side: CardSide) => {
-    const url = URL.createObjectURL(file);
-    setAdjusting({ file, url, side });
+    setAdjusting({ file, url: URL.createObjectURL(file), side });
   }, []);
 
   const handleAdjustConfirm = useCallback((correctedFile: File, side: CardSide) => {
@@ -105,7 +102,6 @@ function CardPhotoStep({
 
   const handleRetake = useCallback((side: CardSide) => {
     setAdjusting(null);
-    // Re-trigger the file input for that side after state clears
     setTimeout(() => {
       if (side === "front") frontInputRef.current?.click();
       else backInputRef.current?.click();
@@ -115,31 +111,19 @@ function CardPhotoStep({
   const handleExtract = async () => {
     if (!front || !back) return;
     setExtracting(true);
-
     try {
       const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
-
       const formData = new FormData();
       formData.append("back", back.file);
       formData.append("front", front.file);
-
       const res = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/extract-metadata`,
-        {
-          method: "POST",
-          headers: { Authorization: `Bearer ${session?.access_token}` },
-          body: formData,
-        }
+        { method: "POST", headers: { Authorization: `Bearer ${session?.access_token}` }, body: formData }
       );
-
       if (!res.ok) throw new Error("Extraction failed");
-
       const metadata: CheeseMetadata = await res.json();
-      onComplete(
-        { frontFile: front.file, frontUrl: front.url, backFile: back.file, backUrl: back.url },
-        metadata
-      );
+      onComplete({ frontFile: front.file, frontUrl: front.url, backFile: back.file, backUrl: back.url }, metadata);
     } catch {
       toast.error("Failed to extract metadata. You can enter it manually.");
       onComplete(
@@ -151,7 +135,6 @@ function CardPhotoStep({
     }
   };
 
-  // Show corner adjustment UI when a photo has just been taken
   if (adjusting) {
     return (
       <CornerAdjustView
@@ -166,15 +149,13 @@ function CardPhotoStep({
   return (
     <div className="space-y-4">
       <p className="text-sm text-gray-500">
-        Photograph the front and back of the cheese card. You&apos;ll be able to
-        adjust the crop before confirming each photo.
+        Photograph the front and back of the cheese card. You&apos;ll crop each photo before confirming.
       </p>
 
       <div className="grid grid-cols-2 gap-3">
         {(["front", "back"] as CardSide[]).map((side) => {
           const photo = side === "front" ? front : back;
           const inputRef = side === "front" ? frontInputRef : backInputRef;
-
           return (
             <div key={side}>
               <input
@@ -189,25 +170,26 @@ function CardPhotoStep({
                   e.target.value = "";
                 }}
               />
+              {/* Portrait 4:7 thumbnail container */}
               <Card
-                className="border-2 border-dashed border-amber-200 cursor-pointer hover:border-amber-400 transition-colors"
+                className="border-2 border-dashed border-amber-200 cursor-pointer hover:border-amber-400 transition-colors overflow-hidden"
                 onClick={() => inputRef.current?.click()}
               >
-                <CardContent className="flex flex-col items-center justify-center h-36 gap-2 p-2">
+                <div style={{ aspectRatio: "4/7" }} className="w-full relative">
                   {photo ? (
                     <img
                       src={photo.url}
                       alt={`Card ${side}`}
-                      className="w-full h-full object-contain rounded"
+                      className="absolute inset-0 w-full h-full object-contain"
                     />
                   ) : (
-                    <>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
                       <span className="text-3xl">📷</span>
                       <p className="text-sm font-medium capitalize text-amber-800">{side}</p>
                       <p className="text-xs text-gray-400">Tap to capture</p>
-                    </>
+                    </div>
                   )}
-                </CardContent>
+                </div>
               </Card>
             </div>
           );
@@ -235,15 +217,13 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
   const containerRef = useRef<HTMLDivElement>(null);
   const loupeRef = useRef<HTMLCanvasElement>(null);
 
-  // Corners in display-space px relative to image top-left; initialized to image corners
   const [corners, setCorners] = useState<[number, number][]>([[0, 0], [1, 0], [1, 1], [0, 1]]);
   const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
   const [dragging, setDragging] = useState<number | null>(null);
-  const [loupeActive, setLoupeActive] = useState(false);
+  const [loupeVisible, setLoupeVisible] = useState(false);
   const [detecting, setDetecting] = useState(true);
   const [applying, setApplying] = useState(false);
 
-  // Once the image loads, set real pixel corners and kick off CV detection
   const handleImgLoad = useCallback(() => {
     const img = imgRef.current;
     if (!img) return;
@@ -252,7 +232,6 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
     setImgSize({ w, h });
     setCorners([[0, 0], [w, 0], [w, h], [0, h]]);
 
-    setDetecting(true);
     detectCardCorners(imageFile).then((detected) => {
       if (detected && imgRef.current) {
         const scaleX = imgRef.current.clientWidth / imgRef.current.naturalWidth;
@@ -275,51 +254,58 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
     const imgX = dispX * scaleX;
     const imgY = dispY * scaleY;
 
-    // Sample 80×80px of original image → draw to 120×120 canvas (1.5× zoom)
-    ctx.clearRect(0, 0, 120, 120);
-    ctx.drawImage(img, imgX - 40, imgY - 40, 80, 80, 0, 0, 120, 120);
+    // Show ~32 display pixels each side → 2.5× zoom at 160px canvas
+    const srcHalfW = 32 * scaleX;
+    const srcHalfH = 32 * scaleY;
+
+    ctx.clearRect(0, 0, 160, 160);
+    ctx.drawImage(img, imgX - srcHalfW, imgY - srcHalfH, srcHalfW * 2, srcHalfH * 2, 0, 0, 160, 160);
 
     // Amber crosshair
     ctx.strokeStyle = "#f59e0b";
     ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.moveTo(60, 44); ctx.lineTo(60, 76);
-    ctx.moveTo(44, 60); ctx.lineTo(76, 60);
+    ctx.moveTo(80, 56); ctx.lineTo(80, 104);
+    ctx.moveTo(56, 80); ctx.lineTo(104, 80);
     ctx.stroke();
-    // Center dot
     ctx.beginPath();
-    ctx.arc(60, 60, 5, 0, Math.PI * 2);
+    ctx.arc(80, 80, 6, 0, Math.PI * 2);
     ctx.stroke();
   }, []);
 
-  const getEventPos = (e: React.PointerEvent): [number, number] => {
+  const getPos = (e: React.PointerEvent): [number, number] => {
     const rect = containerRef.current!.getBoundingClientRect();
     return [e.clientX - rect.left, e.clientY - rect.top];
   };
 
-  const handlePointerDown = useCallback((e: React.PointerEvent, index: number) => {
+  const startDrag = useCallback((e: React.PointerEvent, index: number) => {
     e.preventDefault();
+    e.stopPropagation();
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
     setDragging(index);
-    setLoupeActive(true);
-    const pos = getEventPos(e);
+    setLoupeVisible(true);
+    const pos = getPos(e);
     drawLoupe(pos[0], pos[1]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [drawLoupe]);
 
-  const handlePointerMove = useCallback((e: React.PointerEvent) => {
+  const onMove = useCallback((e: React.PointerEvent) => {
     if (dragging === null || !imgSize) return;
     e.preventDefault();
-    const [x, y] = getEventPos(e);
-    // Clamp to image bounds
-    const cx = Math.max(0, Math.min(imgSize.w, x));
-    const cy = Math.max(0, Math.min(imgSize.h, y));
+    const [x, y] = getPos(e);
+    // Allow handles to go 20px outside image bounds so corner handles
+    // remain fully visible and draggable when at the image edge
+    const cx = Math.max(-20, Math.min(imgSize.w + 20, x));
+    const cy = Math.max(-20, Math.min(imgSize.h + 20, y));
     setCorners((prev) => prev.map((c, i) => i === dragging ? [cx, cy] : c) as [number, number][]);
-    drawLoupe(cx, cy);
+    // Loupe samples clamped to valid image area
+    drawLoupe(Math.max(0, Math.min(imgSize.w, x)), Math.max(0, Math.min(imgSize.h, y)));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dragging, imgSize, drawLoupe]);
 
-  const handlePointerUp = useCallback(() => {
+  const stopDrag = useCallback(() => {
     setDragging(null);
-    setLoupeActive(false);
+    setLoupeVisible(false);
   }, []);
 
   const handleCrop = async () => {
@@ -329,7 +315,10 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
     try {
       const scaleX = img.naturalWidth / img.clientWidth;
       const scaleY = img.naturalHeight / img.clientHeight;
-      const imageCorners = corners.map(([x, y]) => [x * scaleX, y * scaleY] as [number, number]);
+      const imageCorners = corners.map(([x, y]) => [
+        Math.max(0, Math.min(img.naturalWidth, Math.round(x * scaleX))),
+        Math.max(0, Math.min(img.naturalHeight, Math.round(y * scaleY))),
+      ] as [number, number]);
       const result = await applyPerspective(imageFile, imageCorners);
       onConfirm(result);
     } catch {
@@ -338,92 +327,91 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
     }
   };
 
-  const cornerPathData = imgSize
+  // Even-odd path: full image rect minus the quad = dark region outside selection
+  const dimPath = imgSize
     ? `M0,0 H${imgSize.w} V${imgSize.h} H0 Z M${corners.map(([x, y]) => `${x},${y}`).join(" L")} Z`
     : "";
 
   return (
     <div className="space-y-3">
-      <p className="text-sm text-gray-500">
-        Drag the corners to align with the card edges, then tap Crop.
-      </p>
-
-      {/* Loupe — shown while dragging */}
-      <div className="flex justify-center h-[130px] items-center">
-        {loupeActive ? (
-          <canvas
-            ref={loupeRef}
-            width={120}
-            height={120}
-            className="rounded-full border-2 border-amber-400 shadow-lg"
-          />
-        ) : (
-          <div className="w-[120px] h-[120px] rounded-full border-2 border-dashed border-amber-200 flex items-center justify-center">
-            <p className="text-xs text-gray-400 text-center px-2">Drag a corner to preview</p>
-          </div>
-        )}
+      {/* Loupe: fixed to viewport top-center, always in DOM so ref is valid */}
+      <div
+        className="fixed left-1/2 -translate-x-1/2 z-50 rounded-full border-2 border-amber-400 shadow-xl overflow-hidden"
+        style={{ top: "64px", visibility: loupeVisible ? "visible" : "hidden" }}
+      >
+        <canvas ref={loupeRef} width={160} height={160} />
       </div>
 
-      {/* Image + overlay */}
-      <div
-        ref={containerRef}
-        className="relative touch-none select-none"
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerLeave={handlePointerUp}
-      >
-        <img
-          ref={imgRef}
-          src={imageUrl}
-          alt="Card photo"
-          className="w-full block"
-          onLoad={handleImgLoad}
-          crossOrigin="anonymous"
-        />
+      <p className="text-sm text-gray-500">
+        Drag corners to the card edges, then tap Crop.
+      </p>
 
-        {imgSize && (
-          <svg
-            className="absolute inset-0 w-full h-full"
-            viewBox={`0 0 ${imgSize.w} ${imgSize.h}`}
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            {/* Dark overlay outside the quad */}
-            <path
-              d={cornerPathData}
-              fill="rgba(0,0,0,0.45)"
-              fillRule="evenodd"
-            />
-            {/* Quad outline */}
-            <polygon
-              points={corners.map(([x, y]) => `${x},${y}`).join(" ")}
-              fill="none"
-              stroke="#f59e0b"
-              strokeWidth="2"
-            />
-            {/* Corner handles */}
-            {corners.map(([x, y], i) => (
-              <circle
-                key={i}
-                cx={x}
-                cy={y}
-                r={18}
-                fill="rgba(245,158,11,0.75)"
-                stroke="white"
-                strokeWidth="2.5"
-                style={{ cursor: "grab", touchAction: "none" }}
-                onPointerDown={(e) => handlePointerDown(e, i)}
+      {/* Image + SVG overlay. Image is auto-sized; max-height keeps it on screen. */}
+      <div className="w-full flex justify-center">
+        <div
+          ref={containerRef}
+          className="relative touch-none select-none"
+          style={{ display: "inline-block", overflow: "visible" }}
+          onPointerMove={onMove}
+          onPointerUp={stopDrag}
+          onPointerLeave={stopDrag}
+        >
+          <img
+            ref={imgRef}
+            src={imageUrl}
+            alt="Card photo"
+            crossOrigin="anonymous"
+            style={{
+              display: "block",
+              width: "auto",
+              height: "auto",
+              maxWidth: "100vw",
+              maxHeight: "calc(100svh - 200px)",
+            }}
+            onLoad={handleImgLoad}
+          />
+
+          {imgSize && (
+            <svg
+              className="absolute top-0 left-0"
+              width={imgSize.w}
+              height={imgSize.h}
+              style={{ overflow: "visible" }}
+            >
+              {/* Darken outside the selected quad */}
+              <path d={dimPath} fill="rgba(0,0,0,0.45)" fillRule="evenodd" />
+              {/* Quad outline */}
+              <polygon
+                points={corners.map(([x, y]) => `${x},${y}`).join(" ")}
+                fill="none"
+                stroke="#f59e0b"
+                strokeWidth="2"
               />
-            ))}
-          </svg>
-        )}
+              {/* Corner handles — r=22 for easy touch targeting */}
+              {corners.map(([x, y], i) => (
+                <circle
+                  key={i}
+                  cx={x}
+                  cy={y}
+                  r={22}
+                  fill="rgba(245,158,11,0.8)"
+                  stroke="white"
+                  strokeWidth="2.5"
+                  style={{ cursor: "grab", touchAction: "none" }}
+                  onPointerDown={(e) => startDrag(e, i)}
+                />
+              ))}
+            </svg>
+          )}
 
-        {detecting && (
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <p className="text-white text-sm bg-black/60 px-3 py-1 rounded-full">
-              Detecting card...
-            </p>
-          </div>
-        )}
+          {detecting && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <p className="text-white text-sm bg-black/60 px-3 py-1 rounded-full">
+                Detecting card...
+              </p>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="flex gap-2">
@@ -481,30 +469,21 @@ function MetadataStep({
   };
 
   const handleSave = async () => {
-    if (!meta.name.trim()) {
-      toast.error("Cheese name is required");
-      return;
-    }
+    if (!meta.name.trim()) { toast.error("Cheese name is required"); return; }
     setSaving(true);
-
     try {
       const supabase = createClient();
-
       const uploadImage = async (file: File, prefix: string) => {
         const ext = file.name.split(".").pop() ?? "jpg";
         const path = `${tastingId}/${prefix}-${Date.now()}.${ext}`;
-        const { error } = await supabase.storage
-          .from("card-images")
-          .upload(path, file, { contentType: file.type });
+        const { error } = await supabase.storage.from("card-images").upload(path, file, { contentType: file.type });
         if (error) throw error;
         return supabase.storage.from("card-images").getPublicUrl(path).data.publicUrl;
       };
-
       const [frontUrl, backUrl] = await Promise.all([
         uploadImage(photos.frontFile, "front"),
         uploadImage(photos.backFile, "back"),
       ]);
-
       const { data, error } = await supabase
         .from("cheeses")
         .insert({
@@ -521,9 +500,7 @@ function MetadataStep({
         })
         .select()
         .single();
-
       if (error) throw error;
-
       toast.success(`${meta.name} added!`);
       navigate(`/cheeses/${(data as { id: string }).id}`);
     } catch (err) {
@@ -535,9 +512,13 @@ function MetadataStep({
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-2">
-        <img src={photos.frontUrl} alt="Front" className="w-24 h-24 object-cover rounded-lg border" />
-        <img src={photos.backUrl} alt="Back" className="w-24 h-24 object-cover rounded-lg border" />
+      {/* Portrait thumbnails — 4:7 aspect ratio, object-contain */}
+      <div className="flex gap-3">
+        {[{ url: photos.frontUrl, label: "Front" }, { url: photos.backUrl, label: "Back" }].map(({ url, label }) => (
+          <div key={label} className="relative overflow-hidden rounded-lg border bg-gray-50" style={{ width: 72, aspectRatio: "4/7" }}>
+            <img src={url} alt={label} className="absolute inset-0 w-full h-full object-contain" />
+          </div>
+        ))}
       </div>
 
       <Card className="border-amber-100">
@@ -550,35 +531,17 @@ function MetadataStep({
           <Field label="Milk Type" value={meta.milk_type} onChange={(v) => set("milk_type", v)} />
           <div className="space-y-1">
             <Label>Description</Label>
-            <Textarea
-              value={meta.description}
-              onChange={(e) => set("description", e.target.value)}
-              rows={4}
-            />
+            <Textarea value={meta.description} onChange={(e) => set("description", e.target.value)} rows={4} />
           </div>
-          <TagField
-            label="Food Pairings"
-            tags={meta.food_pairings}
-            input={foodInput}
-            onInputChange={setFoodInput}
-            onAdd={() => addTag("food", foodInput)}
-            onRemove={(i) => removeTag("food", i)}
-          />
-          <TagField
-            label="Wine Pairings"
-            tags={meta.wine_pairings}
-            input={wineInput}
-            onInputChange={setWineInput}
-            onAdd={() => addTag("wine", wineInput)}
-            onRemove={(i) => removeTag("wine", i)}
-          />
+          <TagField label="Food Pairings" tags={meta.food_pairings} input={foodInput}
+            onInputChange={setFoodInput} onAdd={() => addTag("food", foodInput)} onRemove={(i) => removeTag("food", i)} />
+          <TagField label="Wine Pairings" tags={meta.wine_pairings} input={wineInput}
+            onInputChange={setWineInput} onAdd={() => addTag("wine", wineInput)} onRemove={(i) => removeTag("wine", i)} />
         </CardContent>
       </Card>
 
       <div className="flex gap-2">
-        <Button variant="outline" onClick={onBack} disabled={saving}>
-          ← Retake Photos
-        </Button>
+        <Button variant="outline" onClick={onBack} disabled={saving}>← Retake Photos</Button>
         <Button onClick={handleSave} disabled={saving} className="flex-1">
           {saving ? "Saving..." : "Save Cheese"}
         </Button>
@@ -596,37 +559,22 @@ function Field({ label, value, onChange }: { label: string; value: string; onCha
   );
 }
 
-function TagField({
-  label, tags, input, onInputChange, onAdd, onRemove,
-}: {
-  label: string;
-  tags: string[];
-  input: string;
-  onInputChange: (v: string) => void;
-  onAdd: () => void;
-  onRemove: (i: number) => void;
+function TagField({ label, tags, input, onInputChange, onAdd, onRemove }: {
+  label: string; tags: string[]; input: string;
+  onInputChange: (v: string) => void; onAdd: () => void; onRemove: (i: number) => void;
 }) {
   return (
     <div className="space-y-2">
       <Label>{label}</Label>
       <div className="flex gap-2">
-        <Input
-          value={input}
-          onChange={(e) => onInputChange(e.target.value)}
-          placeholder="Add item..."
-          onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), onAdd())}
-        />
+        <Input value={input} onChange={(e) => onInputChange(e.target.value)} placeholder="Add item..."
+          onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), onAdd())} />
         <Button type="button" variant="outline" onClick={onAdd}>Add</Button>
       </div>
       {tags.length > 0 && (
         <div className="flex flex-wrap gap-1">
           {tags.map((tag, i) => (
-            <Badge
-              key={i}
-              variant="secondary"
-              className="cursor-pointer hover:bg-red-100"
-              onClick={() => onRemove(i)}
-            >
+            <Badge key={i} variant="secondary" className="cursor-pointer hover:bg-red-100" onClick={() => onRemove(i)}>
               {tag} ×
             </Badge>
           ))}
