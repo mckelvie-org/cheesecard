@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { correctPerspective } from "@/lib/opencv";
+import { detectCardCorners, applyPerspective } from "@/lib/opencv";
 
 interface CheeseMetadata {
   name: string;
@@ -29,6 +29,12 @@ interface PhotoPair {
 
 type Step = "photos" | "metadata";
 type CardSide = "front" | "back";
+
+interface AdjustingState {
+  file: File;
+  url: string;
+  side: CardSide;
+}
 
 export default function NewCheesePage() {
   const { id: tastingId } = useParams<{ id: string }>();
@@ -71,6 +77,8 @@ export default function NewCheesePage() {
   );
 }
 
+// ─── CardPhotoStep ────────────────────────────────────────────────────────────
+
 function CardPhotoStep({
   onComplete,
 }: {
@@ -78,26 +86,30 @@ function CardPhotoStep({
 }) {
   const [front, setFront] = useState<{ file: File; url: string } | null>(null);
   const [back, setBack] = useState<{ file: File; url: string } | null>(null);
-  const [processing, setProcessing] = useState<CardSide | null>(null);
+  const [adjusting, setAdjusting] = useState<AdjustingState | null>(null);
   const [extracting, setExtracting] = useState(false);
   const frontInputRef = useRef<HTMLInputElement>(null);
   const backInputRef = useRef<HTMLInputElement>(null);
 
-  const handlePhotoSelect = useCallback(async (file: File, side: CardSide) => {
-    setProcessing(side);
-    try {
-      const corrected = await correctPerspective(file);
-      const url = URL.createObjectURL(corrected);
-      if (side === "front") setFront({ file: corrected, url });
-      else setBack({ file: corrected, url });
-    } catch {
-      toast.warning("Could not auto-correct perspective — using original.");
-      const url = URL.createObjectURL(file);
-      if (side === "front") setFront({ file, url });
-      else setBack({ file, url });
-    } finally {
-      setProcessing(null);
-    }
+  const handlePhotoSelect = useCallback((file: File, side: CardSide) => {
+    const url = URL.createObjectURL(file);
+    setAdjusting({ file, url, side });
+  }, []);
+
+  const handleAdjustConfirm = useCallback((correctedFile: File, side: CardSide) => {
+    const url = URL.createObjectURL(correctedFile);
+    if (side === "front") setFront({ file: correctedFile, url });
+    else setBack({ file: correctedFile, url });
+    setAdjusting(null);
+  }, []);
+
+  const handleRetake = useCallback((side: CardSide) => {
+    setAdjusting(null);
+    // Re-trigger the file input for that side after state clears
+    setTimeout(() => {
+      if (side === "front") frontInputRef.current?.click();
+      else backInputRef.current?.click();
+    }, 50);
   }, []);
 
   const handleExtract = async () => {
@@ -139,18 +151,29 @@ function CardPhotoStep({
     }
   };
 
+  // Show corner adjustment UI when a photo has just been taken
+  if (adjusting) {
+    return (
+      <CornerAdjustView
+        imageFile={adjusting.file}
+        imageUrl={adjusting.url}
+        onConfirm={(corrected) => handleAdjustConfirm(corrected, adjusting.side)}
+        onRetake={() => handleRetake(adjusting.side)}
+      />
+    );
+  }
+
   return (
     <div className="space-y-4">
       <p className="text-sm text-gray-500">
-        Take photos of the front and back of the cheese card. The app will
-        automatically correct the perspective.
+        Photograph the front and back of the cheese card. You&apos;ll be able to
+        adjust the crop before confirming each photo.
       </p>
 
       <div className="grid grid-cols-2 gap-3">
         {(["front", "back"] as CardSide[]).map((side) => {
           const photo = side === "front" ? front : back;
           const inputRef = side === "front" ? frontInputRef : backInputRef;
-          const isProcessing = processing === side;
 
           return (
             <div key={side}>
@@ -171,9 +194,7 @@ function CardPhotoStep({
                 onClick={() => inputRef.current?.click()}
               >
                 <CardContent className="flex flex-col items-center justify-center h-36 gap-2 p-2">
-                  {isProcessing ? (
-                    <p className="text-xs text-gray-400">Correcting...</p>
-                  ) : photo ? (
+                  {photo ? (
                     <img
                       src={photo.url}
                       alt={`Card ${side}`}
@@ -199,6 +220,225 @@ function CardPhotoStep({
     </div>
   );
 }
+
+// ─── CornerAdjustView ─────────────────────────────────────────────────────────
+
+interface CornerAdjustViewProps {
+  imageFile: File;
+  imageUrl: string;
+  onConfirm: (corrected: File) => void;
+  onRetake: () => void;
+}
+
+function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAdjustViewProps) {
+  const imgRef = useRef<HTMLImageElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const loupeRef = useRef<HTMLCanvasElement>(null);
+
+  // Corners in display-space px relative to image top-left; initialized to image corners
+  const [corners, setCorners] = useState<[number, number][]>([[0, 0], [1, 0], [1, 1], [0, 1]]);
+  const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
+  const [dragging, setDragging] = useState<number | null>(null);
+  const [loupeActive, setLoupeActive] = useState(false);
+  const [detecting, setDetecting] = useState(true);
+  const [applying, setApplying] = useState(false);
+
+  // Once the image loads, set real pixel corners and kick off CV detection
+  const handleImgLoad = useCallback(() => {
+    const img = imgRef.current;
+    if (!img) return;
+    const w = img.clientWidth;
+    const h = img.clientHeight;
+    setImgSize({ w, h });
+    setCorners([[0, 0], [w, 0], [w, h], [0, h]]);
+
+    setDetecting(true);
+    detectCardCorners(imageFile).then((detected) => {
+      if (detected && imgRef.current) {
+        const scaleX = imgRef.current.clientWidth / imgRef.current.naturalWidth;
+        const scaleY = imgRef.current.clientHeight / imgRef.current.naturalHeight;
+        setCorners(detected.map(([x, y]) => [x * scaleX, y * scaleY] as [number, number]));
+      }
+      setDetecting(false);
+    });
+  }, [imageFile]);
+
+  const drawLoupe = useCallback((dispX: number, dispY: number) => {
+    const img = imgRef.current;
+    const canvas = loupeRef.current;
+    if (!img || !canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const scaleX = img.naturalWidth / img.clientWidth;
+    const scaleY = img.naturalHeight / img.clientHeight;
+    const imgX = dispX * scaleX;
+    const imgY = dispY * scaleY;
+
+    // Sample 80×80px of original image → draw to 120×120 canvas (1.5× zoom)
+    ctx.clearRect(0, 0, 120, 120);
+    ctx.drawImage(img, imgX - 40, imgY - 40, 80, 80, 0, 0, 120, 120);
+
+    // Amber crosshair
+    ctx.strokeStyle = "#f59e0b";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(60, 44); ctx.lineTo(60, 76);
+    ctx.moveTo(44, 60); ctx.lineTo(76, 60);
+    ctx.stroke();
+    // Center dot
+    ctx.beginPath();
+    ctx.arc(60, 60, 5, 0, Math.PI * 2);
+    ctx.stroke();
+  }, []);
+
+  const getEventPos = (e: React.PointerEvent): [number, number] => {
+    const rect = containerRef.current!.getBoundingClientRect();
+    return [e.clientX - rect.left, e.clientY - rect.top];
+  };
+
+  const handlePointerDown = useCallback((e: React.PointerEvent, index: number) => {
+    e.preventDefault();
+    (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    setDragging(index);
+    setLoupeActive(true);
+    const pos = getEventPos(e);
+    drawLoupe(pos[0], pos[1]);
+  }, [drawLoupe]);
+
+  const handlePointerMove = useCallback((e: React.PointerEvent) => {
+    if (dragging === null || !imgSize) return;
+    e.preventDefault();
+    const [x, y] = getEventPos(e);
+    // Clamp to image bounds
+    const cx = Math.max(0, Math.min(imgSize.w, x));
+    const cy = Math.max(0, Math.min(imgSize.h, y));
+    setCorners((prev) => prev.map((c, i) => i === dragging ? [cx, cy] : c) as [number, number][]);
+    drawLoupe(cx, cy);
+  }, [dragging, imgSize, drawLoupe]);
+
+  const handlePointerUp = useCallback(() => {
+    setDragging(null);
+    setLoupeActive(false);
+  }, []);
+
+  const handleCrop = async () => {
+    const img = imgRef.current;
+    if (!img) return;
+    setApplying(true);
+    try {
+      const scaleX = img.naturalWidth / img.clientWidth;
+      const scaleY = img.naturalHeight / img.clientHeight;
+      const imageCorners = corners.map(([x, y]) => [x * scaleX, y * scaleY] as [number, number]);
+      const result = await applyPerspective(imageFile, imageCorners);
+      onConfirm(result);
+    } catch {
+      toast.error("Failed to crop image");
+      setApplying(false);
+    }
+  };
+
+  const cornerPathData = imgSize
+    ? `M0,0 H${imgSize.w} V${imgSize.h} H0 Z M${corners.map(([x, y]) => `${x},${y}`).join(" L")} Z`
+    : "";
+
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-gray-500">
+        Drag the corners to align with the card edges, then tap Crop.
+      </p>
+
+      {/* Loupe — shown while dragging */}
+      <div className="flex justify-center h-[130px] items-center">
+        {loupeActive ? (
+          <canvas
+            ref={loupeRef}
+            width={120}
+            height={120}
+            className="rounded-full border-2 border-amber-400 shadow-lg"
+          />
+        ) : (
+          <div className="w-[120px] h-[120px] rounded-full border-2 border-dashed border-amber-200 flex items-center justify-center">
+            <p className="text-xs text-gray-400 text-center px-2">Drag a corner to preview</p>
+          </div>
+        )}
+      </div>
+
+      {/* Image + overlay */}
+      <div
+        ref={containerRef}
+        className="relative touch-none select-none"
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerLeave={handlePointerUp}
+      >
+        <img
+          ref={imgRef}
+          src={imageUrl}
+          alt="Card photo"
+          className="w-full block"
+          onLoad={handleImgLoad}
+          crossOrigin="anonymous"
+        />
+
+        {imgSize && (
+          <svg
+            className="absolute inset-0 w-full h-full"
+            viewBox={`0 0 ${imgSize.w} ${imgSize.h}`}
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            {/* Dark overlay outside the quad */}
+            <path
+              d={cornerPathData}
+              fill="rgba(0,0,0,0.45)"
+              fillRule="evenodd"
+            />
+            {/* Quad outline */}
+            <polygon
+              points={corners.map(([x, y]) => `${x},${y}`).join(" ")}
+              fill="none"
+              stroke="#f59e0b"
+              strokeWidth="2"
+            />
+            {/* Corner handles */}
+            {corners.map(([x, y], i) => (
+              <circle
+                key={i}
+                cx={x}
+                cy={y}
+                r={18}
+                fill="rgba(245,158,11,0.75)"
+                stroke="white"
+                strokeWidth="2.5"
+                style={{ cursor: "grab", touchAction: "none" }}
+                onPointerDown={(e) => handlePointerDown(e, i)}
+              />
+            ))}
+          </svg>
+        )}
+
+        {detecting && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <p className="text-white text-sm bg-black/60 px-3 py-1 rounded-full">
+              Detecting card...
+            </p>
+          </div>
+        )}
+      </div>
+
+      <div className="flex gap-2">
+        <Button variant="outline" onClick={onRetake} disabled={applying}>
+          ↩ Retake
+        </Button>
+        <Button onClick={handleCrop} disabled={applying || detecting} className="flex-1">
+          {applying ? "Cropping..." : "Crop Card →"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ─── MetadataStep ─────────────────────────────────────────────────────────────
 
 function MetadataStep({
   tastingId,
