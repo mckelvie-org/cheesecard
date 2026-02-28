@@ -7,6 +7,30 @@ const CORS_HEADERS = {
     "authorization, x-client-info, apikey, content-type",
 };
 
+/** Read width/height from a JPEG SOF marker without a full image library. */
+function getJpegDimensions(buffer: ArrayBuffer): { w: number; h: number } | null {
+  const view = new DataView(buffer);
+  if (view.byteLength < 4 || view.getUint16(0) !== 0xFFD8) return null; // not a JPEG
+  let offset = 2;
+  while (offset < view.byteLength - 4) {
+    if (view.getUint8(offset) !== 0xFF) break;
+    const marker = view.getUint8(offset + 1);
+    // SOF0–SOF3: Start of Frame markers that contain image dimensions
+    if (marker >= 0xC0 && marker <= 0xC3) {
+      if (offset + 9 > view.byteLength) break;
+      const h = view.getUint16(offset + 5);
+      const w = view.getUint16(offset + 7);
+      return { w, h };
+    }
+    if (marker === 0xD9 || marker === 0xDA) break; // EOI or SOS — stop
+    if (offset + 4 > view.byteLength) break;
+    const segLen = view.getUint16(offset + 2);
+    if (segLen < 2) break;
+    offset += 2 + segLen;
+  }
+  return null;
+}
+
 function buildPrompt(imgW: number, imgH: number): string {
   return `You are analyzing a photo of a cheese information card. The image is ${imgW} pixels wide by ${imgH} pixels tall.
 
@@ -72,18 +96,16 @@ Deno.serve(async (req) => {
     return new Response("No image provided", { status: 400, headers: CORS_HEADERS });
   }
 
-  const imgW = parseInt(formData.get("width") as string ?? "0", 10) || 0;
-  const imgH = parseInt(formData.get("height") as string ?? "0", 10) || 0;
+  const buffer = await imageFile.arrayBuffer();
+  const dims = getJpegDimensions(buffer);
+  const imgW = dims?.w ?? 0;
+  const imgH = dims?.h ?? 0;
 
-  const toBase64 = async (file: File): Promise<string> => {
-    const buffer = await file.arrayBuffer();
-    const bytes = new Uint8Array(buffer);
-    let binary = "";
-    for (const b of bytes) binary += String.fromCharCode(b);
-    return btoa(binary);
-  };
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  for (const b of bytes) binary += String.fromCharCode(b);
+  const base64 = btoa(binary);
 
-  const base64 = await toBase64(imageFile);
   const mediaType = imageFile.type as "image/jpeg" | "image/png" | "image/webp" | "image/gif";
   console.log(`detect-corners: image ${imageFile.name} type=${mediaType} size=${imageFile.size} bytes dimensions=${imgW}x${imgH}`);
 
