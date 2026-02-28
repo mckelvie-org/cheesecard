@@ -13,7 +13,7 @@ import { createClient } from "@/lib/supabase/client";
 async function resizeImage(
   file: File,
   maxPx: number,
-): Promise<{ blob: Blob; scaleX: number; scaleY: number }> {
+): Promise<{ blob: Blob; w: number; h: number; scaleX: number; scaleY: number }> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
@@ -27,8 +27,11 @@ async function resizeImage(
       canvas.toBlob(
         (blob) => {
           if (!blob) { reject(new Error("resize failed")); return; }
+          const scaleX = img.naturalWidth / w;
+          const scaleY = img.naturalHeight / h;
+          console.log(`[cornersai] original ${img.naturalWidth}×${img.naturalHeight} → resized ${w}×${h}, scaleX=${scaleX.toFixed(3)} scaleY=${scaleY.toFixed(3)}`);
           // scaleX/scaleY convert from resized-image px → original-image px
-          resolve({ blob, scaleX: img.naturalWidth / w, scaleY: img.naturalHeight / h });
+          resolve({ blob, w, h, scaleX, scaleY });
         },
         "image/jpeg",
         0.88,
@@ -43,10 +46,24 @@ export async function detectCornersWithAI(
   file: File,
 ): Promise<[number, number][] | null> {
   try {
-    const { blob, scaleX, scaleY } = await resizeImage(file, 1600);
+    const { blob, w, h, scaleX, scaleY } = await resizeImage(file, 1600);
+
+    // Verify what the canvas actually produced by reading blob dimensions
+    await new Promise<void>((resolve) => {
+      const check = new Image();
+      check.onload = () => {
+        console.log(`[cornersai] blob check: ${check.naturalWidth}×${check.naturalHeight} (canvas was ${w}×${h})`);
+        URL.revokeObjectURL(check.src);
+        resolve();
+      };
+      check.onerror = () => { console.warn("[cornersai] blob check failed"); resolve(); };
+      check.src = URL.createObjectURL(blob);
+    });
 
     const form = new FormData();
     form.append("image", new File([blob], "card.jpg", { type: "image/jpeg" }));
+    form.append("width", String(w));
+    form.append("height", String(h));
 
     // supabase.functions.invoke() handles token refresh and auth headers
     const { data, error } = await createClient().functions.invoke("detect-corners", { body: form });
