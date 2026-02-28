@@ -104,60 +104,78 @@ export async function detectCardCorners(file: File): Promise<[number, number][] 
         // Boundary margin: reject quads whose corners touch the image edges
         const margin = Math.round(procW * 0.05);
 
-        let bestContour: typeof cv.Mat | null = null;
-        let bestArea = 0;
-
+        // Collect large contours that don't touch the image boundary,
+        // sorted largest-first. We try the top 3 in case the largest
+        // is a false positive (e.g. a shadow outline).
+        const candidates: Array<{ area: number; contour: ReturnType<typeof cv.Mat> }> = [];
         for (let i = 0; i < contours.size(); i++) {
           const contour = contours.get(i);
           const area = cv.contourArea(contour);
-
-          // Must be at least 15% of image area
-          if (area < imageArea * 0.15) {
-            contour.delete();
-            continue;
-          }
-
-          // Reject if the contour's bounding box touches the image boundary —
-          // filters out the "entire image outline" false positive
+          if (area < imageArea * 0.10) continue;
           const br = cv.boundingRect(contour);
           const touchesBoundary =
             br.x < margin || br.y < margin ||
             br.x + br.width > procW - margin ||
             br.y + br.height > procH - margin;
+          if (!touchesBoundary) candidates.push({ area, contour });
+        }
+        candidates.sort((a, b) => b.area - a.area);
 
-          if (!touchesBoundary && area > bestArea) {
-            bestContour?.delete();
-            bestArea = area;
-            bestContour = contour;
-          } else {
-            contour.delete();
+        let result: [number, number][] | null = null;
+        for (const { contour } of candidates.slice(0, 3)) {
+          // convexHull straightens the rounded-corner arcs in the contour
+          // so that approxPolyDP reliably collapses to exactly 4 vertices.
+          const hull = new cv.Mat();
+          cv.convexHull(contour, hull);
+
+          const perimeter = cv.arcLength(hull, true);
+
+          // Search for an epsilon that gives exactly 4 sides.
+          // A card's hull needs a larger epsilon than a polygon with sharp
+          // corners because the rounded corners add extra hull points.
+          for (const epsFactor of [0.02, 0.03, 0.04, 0.05, 0.06, 0.08, 0.10]) {
+            const approx = new cv.Mat();
+            cv.approxPolyDP(hull, approx, epsFactor * perimeter, true);
+
+            if (approx.rows === 4 && cv.isContourConvex(approx)) {
+              const pts: [number, number][] = [];
+              for (let i = 0; i < 4; i++) {
+                pts.push([
+                  Math.round(approx.data32S[i * 2] / scale),
+                  Math.round(approx.data32S[i * 2 + 1] / scale),
+                ]);
+              }
+              approx.delete();
+
+              // Validate aspect ratio against the known card dimensions (4:7 = 0.571).
+              // Average opposite edge lengths to approximate the perspective-corrected
+              // size. Tolerance covers up to ~45° tilt toward/away from camera.
+              const ordered = orderPoints(pts);
+              const topW  = Math.hypot(ordered[1][0] - ordered[0][0], ordered[1][1] - ordered[0][1]);
+              const botW  = Math.hypot(ordered[2][0] - ordered[3][0], ordered[2][1] - ordered[3][1]);
+              const lefH  = Math.hypot(ordered[3][0] - ordered[0][0], ordered[3][1] - ordered[0][1]);
+              const rigH  = Math.hypot(ordered[2][0] - ordered[1][0], ordered[2][1] - ordered[1][1]);
+              const ratio = (topW + botW) / (lefH + rigH);
+
+              if (ratio >= 0.35 && ratio <= 0.90) {
+                result = ordered;
+              }
+            } else {
+              approx.delete();
+            }
+            if (result) break;
           }
+
+          hull.delete();
+          if (result) break;
         }
 
-        if (!bestContour) {
-          resolve(null);
-          return;
-        }
-
-        // Use minAreaRect instead of approxPolyDP — handles rotated cards
-        // correctly and won't snap to axis-aligned approximations
-        const rotatedRect = cv.minAreaRect(bestContour);
-        const boxMat = new cv.Mat();
-        cv.boxPoints(rotatedRect, boxMat);
-
-        const pts: [number, number][] = [];
-        for (let i = 0; i < 4; i++) {
-          pts.push([
-            Math.round(boxMat.data32F[i * 2] / scale),
-            Math.round(boxMat.data32F[i * 2 + 1] / scale),
-          ]);
-        }
-        boxMat.delete();
-
-        resolve(orderPoints(pts));
+        resolve(result);
       } catch {
         resolve(null);
       } finally {
+        // contours and hierarchy are deleted here; individual contour Mats
+        // inside the MatVector are owned by it and must not be deleted separately
         [src, gray, blurred, edges, dilated, contours, hierarchy, kernel].forEach((m) => {
           try { m.delete(); } catch { /* ignore */ }
         });
