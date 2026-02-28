@@ -52,9 +52,17 @@ export async function detectCornersWithAI(
       { method: "POST", headers: { Authorization: `Bearer ${accessToken}` }, body: form },
     );
 
-    if (!res.ok) return null;
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      console.error(`detect-corners: HTTP ${res.status}`, body);
+      return null;
+    }
     const data = await res.json();
-    if (data.error || !data.tl || !data.tr || !data.br || !data.bl) return null;
+    console.log("detect-corners response:", data);
+    if (data.error || !data.tl || !data.tr || !data.br || !data.bl) {
+      console.error("detect-corners: bad response shape or error field", data);
+      return null;
+    }
 
     // Scale from resized-image coordinates back to original-image coordinates
     const corners: [number, number][] = [
@@ -73,11 +81,13 @@ export async function detectCornersWithAI(
     const ratio = (topW + botW) / (lefH + rigH);
     // Accept portrait (0.35–0.90) or landscape (1.1–2.9) — card may be rotated
     if (!((ratio >= 0.35 && ratio <= 0.90) || (ratio >= 1.1 && ratio <= 2.9))) {
+      console.error(`detect-corners: aspect ratio ${ratio.toFixed(3)} out of range, rejecting`);
       return null;
     }
 
     return corners;
-  } catch {
+  } catch (err) {
+    console.error("detect-corners: exception", err);
     return null;
   }
 }

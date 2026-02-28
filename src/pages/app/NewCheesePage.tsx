@@ -122,11 +122,15 @@ function CardPhotoStep({
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/extract-metadata`,
         { method: "POST", headers: { Authorization: `Bearer ${session?.access_token}` }, body: formData }
       );
-      if (!res.ok) throw new Error("Extraction failed");
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        throw new Error(`HTTP ${res.status}: ${body.slice(0, 200)}`);
+      }
       const metadata: CheeseMetadata = await res.json();
       onComplete({ frontFile: front.file, frontUrl: front.url, backFile: back.file, backUrl: back.url }, metadata);
-    } catch {
-      toast.error("Failed to extract metadata. You can enter it manually.");
+    } catch (err) {
+      console.error("extract-metadata failed:", err);
+      toast.error(`Failed to extract metadata: ${err instanceof Error ? err.message : err}`);
       onComplete(
         { frontFile: front.file, frontUrl: front.url, backFile: back.file, backUrl: back.url },
         { name: "", country: "", region: "", milk_type: "", description: "", food_pairings: [], wine_pairings: [] }
