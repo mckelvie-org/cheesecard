@@ -170,27 +170,26 @@ function CardPhotoStep({
                   e.target.value = "";
                 }}
               />
-              {/* Portrait 4:7 thumbnail container */}
-              <Card
-                className="border-2 border-dashed border-amber-200 cursor-pointer hover:border-amber-400 transition-colors overflow-hidden"
+              {/* Portrait 4:7 thumbnail — plain div avoids Card's py-6 padding */}
+              <div
+                className="border-2 border-dashed border-amber-200 rounded-xl cursor-pointer hover:border-amber-400 transition-colors overflow-hidden relative"
+                style={{ aspectRatio: "4/7" }}
                 onClick={() => inputRef.current?.click()}
               >
-                <div style={{ aspectRatio: "4/7" }} className="w-full relative">
-                  {photo ? (
-                    <img
-                      src={photo.url}
-                      alt={`Card ${side}`}
-                      className="absolute inset-0 w-full h-full object-contain"
-                    />
-                  ) : (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
-                      <span className="text-3xl">📷</span>
-                      <p className="text-sm font-medium capitalize text-amber-800">{side}</p>
-                      <p className="text-xs text-gray-400">Tap to capture</p>
-                    </div>
-                  )}
-                </div>
-              </Card>
+                {photo ? (
+                  <img
+                    src={photo.url}
+                    alt={`Card ${side}`}
+                    className="absolute inset-0 w-full h-full object-contain"
+                  />
+                ) : (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
+                    <span className="text-3xl">📷</span>
+                    <p className="text-sm font-medium capitalize text-amber-800">{side}</p>
+                    <p className="text-xs text-gray-400">Tap to capture</p>
+                  </div>
+                )}
+              </div>
             </div>
           );
         })}
@@ -230,7 +229,10 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
     const w = img.clientWidth;
     const h = img.clientHeight;
     setImgSize({ w, h });
-    setCorners([[0, 0], [w, 0], [w, h], [0, h]]);
+    // Default to 5% inset so handles are away from the edges (avoids browser
+    // back-swipe and is a better starting point than the extreme corners)
+    const i = 0.05;
+    setCorners([[w*i, h*i], [w*(1-i), h*i], [w*(1-i), h*(1-i)], [w*i, h*(1-i)]]);
 
     detectCardCorners(imageFile).then((detected) => {
       if (detected && imgRef.current) {
@@ -254,9 +256,10 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
     const imgX = dispX * scaleX;
     const imgY = dispY * scaleY;
 
-    // Show ~32 display pixels each side → 2.5× zoom at 160px canvas
-    const srcHalfW = 32 * scaleX;
-    const srcHalfH = 32 * scaleY;
+    // Show ~60 display pixels each side → 1.33× zoom at 160px canvas;
+    // enough to see a rounded card corner with surrounding context
+    const srcHalfW = 60 * scaleX;
+    const srcHalfH = 60 * scaleY;
 
     ctx.clearRect(0, 0, 160, 160);
     ctx.drawImage(img, imgX - srcHalfW, imgY - srcHalfH, srcHalfW * 2, srcHalfH * 2, 0, 0, 160, 160);
@@ -346,8 +349,8 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
         Drag corners to the card edges, then tap Crop.
       </p>
 
-      {/* Image + SVG overlay. Image is auto-sized; max-height keeps it on screen. */}
-      <div className="w-full flex justify-center">
+      {/* px-4 keeps handles away from screen edges (prevents iOS back-swipe) */}
+      <div className="w-full flex justify-center px-4">
         <div
           ref={containerRef}
           className="relative touch-none select-none"
@@ -365,7 +368,7 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
               display: "block",
               width: "auto",
               height: "auto",
-              maxWidth: "100vw",
+              maxWidth: "100%",
               maxHeight: "calc(100svh - 200px)",
             }}
             onLoad={handleImgLoad}

@@ -230,13 +230,34 @@ export async function applyPerspective(
       outCanvas.height = OUT_H;
       cv.imshow(outCanvas, dst);
 
+      // Mask rounded corners — radius ≈ 1/16 of card width (matches real card)
+      const ctx2d = outCanvas.getContext("2d")!;
+      const r = OUT_W / 16; // 25px on a 400px-wide output
+      ctx2d.globalCompositeOperation = "destination-in";
+      ctx2d.beginPath();
+      ctx2d.moveTo(r, 0);
+      ctx2d.lineTo(OUT_W - r, 0);
+      ctx2d.quadraticCurveTo(OUT_W, 0, OUT_W, r);
+      ctx2d.lineTo(OUT_W, OUT_H - r);
+      ctx2d.quadraticCurveTo(OUT_W, OUT_H, OUT_W - r, OUT_H);
+      ctx2d.lineTo(r, OUT_H);
+      ctx2d.quadraticCurveTo(0, OUT_H, 0, OUT_H - r);
+      ctx2d.lineTo(0, r);
+      ctx2d.quadraticCurveTo(0, 0, r, 0);
+      ctx2d.closePath();
+      ctx2d.fillStyle = "black";
+      ctx2d.fill();
+      ctx2d.globalCompositeOperation = "source-over";
+
+      // Export as PNG to preserve transparent corners
+      const pngName = file.name.replace(/\.[^.]+$/, ".png");
       outCanvas.toBlob((blob) => {
         [src, srcPts, dstPts, M, dst].forEach((m) => {
           try { m.delete(); } catch { /* ignore */ }
         });
         if (!blob) { resolve(file); return; }
-        resolve(new File([blob], file.name, { type: "image/jpeg" }));
-      }, "image/jpeg", 0.92);
+        resolve(new File([blob], pngName, { type: "image/png" }));
+      }, "image/png");
     };
     img.onerror = reject;
     img.src = URL.createObjectURL(file);
