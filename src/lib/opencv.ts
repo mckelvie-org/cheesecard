@@ -63,8 +63,10 @@ export async function detectCardCorners(file: File): Promise<[number, number][] 
       const origW = img.naturalWidth;
       const origH = img.naturalHeight;
 
-      // Scale down to max 800px wide for faster processing
-      const scale = Math.min(1, 800 / origW);
+      // Scale down so the longest side is at most 800px.
+      // Using longest dimension (not just width) avoids tall proc images
+      // for portrait phone photos that would otherwise exceed 1000px height.
+      const scale = Math.min(1, 800 / Math.max(origW, origH));
       const procW = Math.round(origW * scale);
       const procH = Math.round(origH * scale);
 
@@ -78,27 +80,29 @@ export async function detectCardCorners(file: File): Promise<[number, number][] 
       const gray = new cv.Mat();
       const blurred = new cv.Mat();
       const edges = new cv.Mat();
-      const dilated = new cv.Mat();
+      const closed = new cv.Mat();
       const contours = new cv.MatVector();
       const hierarchy = new cv.Mat();
-      const kernel = cv.Mat.ones(3, 3, cv.CV_8U);
+      // 5×5 kernel gives more gap-closing for rounded card corners
+      const kernel = cv.Mat.ones(5, 5, cv.CV_8U);
 
       try {
         cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
         cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
 
-        // Auto-Canny: use mean as proxy for median, derive thresholds
+        // Auto-Canny: mean ≈ median for typical images; derive thresholds
         const mean = cv.mean(blurred)[0];
         const high = Math.min(255, Math.max(80, mean * 1.33));
         const low = high * 0.5;
         cv.Canny(blurred, edges, low, high);
 
-        // Dilate to close gaps from rounded card corners
-        cv.dilate(edges, dilated, kernel);
+        // Morphological close (dilate then erode) seals gaps at rounded corners
+        // better than dilate alone — keeps edge positions accurate after closing.
+        cv.morphologyEx(edges, closed, cv.MORPH_CLOSE, kernel);
 
         // RETR_EXTERNAL: only outermost contours — prevents internal card
         // features (e.g. the photo square on the front face) from matching
-        cv.findContours(dilated, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+        cv.findContours(closed, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
         const imageArea = procW * procH;
         // Boundary margin: reject quads whose corners touch the image edges
@@ -131,9 +135,10 @@ export async function detectCardCorners(file: File): Promise<[number, number][] 
           const perimeter = cv.arcLength(hull, true);
 
           // Search for an epsilon that gives exactly 4 sides.
-          // A card's hull needs a larger epsilon than a polygon with sharp
-          // corners because the rounded corners add extra hull points.
-          for (const epsFactor of [0.02, 0.03, 0.04, 0.05, 0.06, 0.08, 0.10]) {
+          // Start tight (0.01, matching the Python playing-card detector);
+          // convexHull already smooths rounded-corner arcs so the hull
+          // approximates a rectangle well at low epsilon.
+          for (const epsFactor of [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.08, 0.10]) {
             const approx = new cv.Mat();
             cv.approxPolyDP(hull, approx, epsFactor * perimeter, true);
 
@@ -176,7 +181,7 @@ export async function detectCardCorners(file: File): Promise<[number, number][] 
       } finally {
         // contours and hierarchy are deleted here; individual contour Mats
         // inside the MatVector are owned by it and must not be deleted separately
-        [src, gray, blurred, edges, dilated, contours, hierarchy, kernel].forEach((m) => {
+        [src, gray, blurred, edges, closed, contours, hierarchy, kernel].forEach((m) => {
           try { m.delete(); } catch { /* ignore */ }
         });
       }

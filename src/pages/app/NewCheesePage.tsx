@@ -8,8 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { applyPerspective } from "@/lib/opencv";
-import { detectCornersWithAI } from "@/lib/cornersai";
+import { applyPerspective, detectCardCorners } from "@/lib/opencv";
 
 interface CheeseMetadata {
   name: string;
@@ -242,11 +241,7 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
     cornersRef.current = inset;
     setCorners(inset);
 
-    // Use Claude Vision for reliable corner detection (handles perspective,
-    // rounded corners, and complex card faces that trip up OpenCV).
-    // detectCornersWithAI uses supabase.functions.invoke() which handles
-    // token refresh automatically — no manual session management needed.
-    detectCornersWithAI(imageFile).then((detected) => {
+    detectCardCorners(imageFile).then((detected) => {
       if (detected && imgRef.current) {
         const scaleX = imgRef.current.clientWidth / imgRef.current.naturalWidth;
         const scaleY = imgRef.current.clientHeight / imgRef.current.naturalHeight;
