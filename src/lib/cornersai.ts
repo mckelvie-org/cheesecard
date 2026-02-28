@@ -48,8 +48,15 @@ export async function detectCornersWithAI(
     const form = new FormData();
     form.append("image", new File([blob], "card.jpg", { type: "image/jpeg" }));
 
+    // Diagnostic: log session state before invoke
+    const supabase = createClient();
+    const { data: { session } } = await supabase.auth.getSession();
+    console.log("[cornersai] session exists:", !!session);
+    console.log("[cornersai] access_token prefix:", session?.access_token?.slice(0, 30));
+    console.log("[cornersai] expires_at:", session?.expires_at, "now:", Math.floor(Date.now()/1000));
+
     // supabase.functions.invoke() handles token refresh and auth headers
-    const { data, error } = await createClient().functions.invoke("detect-corners", { body: form });
+    const { data, error } = await supabase.functions.invoke("detect-corners", { body: form });
 
     if (error) {
       console.error("detect-corners error:", error);
