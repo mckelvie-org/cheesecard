@@ -61,6 +61,7 @@ Deno.serve(async (req) => {
 
   const base64 = await toBase64(imageFile);
   const mediaType = imageFile.type as "image/jpeg" | "image/png" | "image/webp" | "image/gif";
+  console.log(`detect-corners: image ${imageFile.name} type=${mediaType} size=${imageFile.size} bytes`);
 
   const anthropic = new Anthropic({ apiKey: Deno.env.get("ANTHROPIC_API_KEY") });
 
@@ -77,9 +78,11 @@ Deno.serve(async (req) => {
   });
 
   const text = response.content[0].type === "text" ? response.content[0].text.trim() : "";
+  console.log("detect-corners: Claude raw response:", text);
 
   try {
     const parsed = JSON.parse(text);
+    console.log("detect-corners: parsed corners:", JSON.stringify(parsed));
     return new Response(JSON.stringify(parsed), {
       headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
     });
