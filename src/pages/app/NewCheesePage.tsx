@@ -8,7 +8,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { detectCardCorners, applyPerspective } from "@/lib/opencv";
+import { applyPerspective } from "@/lib/opencv";
+import { detectCornersWithAI } from "@/lib/cornersai";
 
 interface CheeseMetadata {
   name: string;
@@ -230,22 +231,26 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
     const w = img.clientWidth;
     const h = img.clientHeight;
     setImgSize({ w, h });
-    // Default to 5% inset so handles are away from the edges (avoids browser
-    // back-swipe and is a better starting point than the extreme corners)
+    // Default to 5% inset so handles are visible and away from screen edges
     const i = 0.05;
     const inset: [number, number][] = [[w*i, h*i], [w*(1-i), h*i], [w*(1-i), h*(1-i)], [w*i, h*(1-i)]];
     cornersRef.current = inset;
     setCorners(inset);
 
-    detectCardCorners(imageFile).then((detected) => {
-      if (detected && imgRef.current) {
-        const scaleX = imgRef.current.clientWidth / imgRef.current.naturalWidth;
-        const scaleY = imgRef.current.clientHeight / imgRef.current.naturalHeight;
-        const mapped = detected.map(([x, y]) => [x * scaleX, y * scaleY] as [number, number]);
-        cornersRef.current = mapped;
-        setCorners(mapped);
-      }
-      setDetecting(false);
+    // Use Claude Vision for reliable corner detection (handles perspective,
+    // rounded corners, and complex card faces that trip up OpenCV)
+    createClient().auth.getSession().then(({ data: { session } }) => {
+      if (!session) { setDetecting(false); return; }
+      detectCornersWithAI(imageFile, session.access_token).then((detected) => {
+        if (detected && imgRef.current) {
+          const scaleX = imgRef.current.clientWidth / imgRef.current.naturalWidth;
+          const scaleY = imgRef.current.clientHeight / imgRef.current.naturalHeight;
+          const mapped = detected.map(([x, y]) => [x * scaleX, y * scaleY] as [number, number]);
+          cornersRef.current = mapped;
+          setCorners(mapped);
+        }
+        setDetecting(false);
+      });
     });
   }, [imageFile]);
 

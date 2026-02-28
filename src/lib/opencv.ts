@@ -241,9 +241,9 @@ export async function applyPerspective(
       outCanvas.height = OUT_H;
       cv.imshow(outCanvas, dst);
 
-      // Mask rounded corners — radius ≈ 1/16 of card width (matches real card)
+      // Mask rounded corners — radius ≈ 1/8 of card width (matches real card)
       const ctx2d = outCanvas.getContext("2d")!;
-      const r = OUT_W / 16; // 25px on a 400px-wide output
+      const r = OUT_W / 8; // 50px on a 400px-wide output
       ctx2d.globalCompositeOperation = "destination-in";
       ctx2d.beginPath();
       ctx2d.moveTo(r, 0);
