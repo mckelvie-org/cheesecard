@@ -1,19 +1,25 @@
-"use client";
-
 import { useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth-context";
-import LogoutButton from "@/components/LogoutButton";
+import { Button } from "@/components/ui/button";
+import { createClient } from "@/lib/supabase/client";
 
 export default function PendingPage() {
   const { user, profile, loading } = useAuth();
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (loading) return;
-    if (!user) { window.location.href = "/cheesecard/login"; return; }
+    if (!user) { navigate("/login", { replace: true }); return; }
     if (profile?.role === "member" || profile?.role === "admin") {
-      window.location.href = "/cheesecard/";
+      navigate("/", { replace: true });
     }
-  }, [user, profile, loading]);
+  }, [user, profile, loading, navigate]);
+
+  const signOut = () => {
+    createClient().auth.signOut().catch(() => {});
+    navigate("/login", { replace: true });
+  };
 
   if (loading || !user) {
     return (
@@ -36,7 +42,7 @@ export default function PendingPage() {
           </p>
         </div>
         <p className="text-xs text-gray-400">Signed in as {user.email}</p>
-        <LogoutButton />
+        <Button variant="outline" onClick={signOut}>Sign out</Button>
       </div>
     </div>
   );

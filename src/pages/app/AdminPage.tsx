@@ -1,7 +1,7 @@
-"use client";
-
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/lib/auth-context";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -10,25 +10,39 @@ import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import type { Profile, Role } from "@/lib/supabase/types";
 
-interface Props {
-  pending: Profile[];
-  members: Profile[];
-}
+export default function AdminPage() {
+  const { profile } = useAuth();
+  const navigate = useNavigate();
+  const [pending, setPending] = useState<Profile[]>([]);
+  const [members, setMembers] = useState<Profile[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [updating, setUpdating] = useState<string | null>(null);
 
-export default function AdminPanel({ pending: initialPending, members: initialMembers }: Props) {
-  const supabase = createClient();
-  const [pending, setPending] = useState(initialPending);
-  const [members, setMembers] = useState(initialMembers);
-  const [loading, setLoading] = useState<string | null>(null);
+  useEffect(() => {
+    if (profile && profile.role !== "admin") {
+      navigate("/", { replace: true });
+      return;
+    }
+    createClient()
+      .from("profiles")
+      .select("*")
+      .order("full_name")
+      .then(({ data }) => {
+        const all = (data ?? []) as Profile[];
+        setPending(all.filter((p) => p.role === "pending"));
+        setMembers(all.filter((p) => p.role === "member" || p.role === "admin"));
+        setLoading(false);
+      });
+  }, [profile, navigate]);
 
   const updateRole = async (userId: string, role: Role) => {
-    setLoading(userId);
-    const { error } = await supabase
+    setUpdating(userId);
+    const { error } = await createClient()
       .from("profiles")
       .update({ role })
       .eq("id", userId);
 
-    setLoading(null);
+    setUpdating(null);
     if (error) {
       toast.error("Failed to update role");
       return;
@@ -55,13 +69,14 @@ export default function AdminPanel({ pending: initialPending, members: initialMe
     }
   };
 
+  if (loading) return <p className="text-center py-12 text-gray-400">Loading...</p>;
+
   return (
     <div className="space-y-6">
-      {/* Pending approvals */}
+      <h1 className="text-2xl font-bold text-amber-900">Admin Panel</h1>
+
       <div className="space-y-3">
-        <h2 className="font-semibold text-gray-700">
-          Pending Approval ({pending.length})
-        </h2>
+        <h2 className="font-semibold text-gray-700">Pending Approval ({pending.length})</h2>
         {pending.length === 0 ? (
           <p className="text-sm text-gray-400">No pending requests.</p>
         ) : (
@@ -69,15 +84,13 @@ export default function AdminPanel({ pending: initialPending, members: initialMe
             <Card key={user.id} className="border-amber-200">
               <CardContent className="flex items-center justify-between py-3">
                 <UserInfo user={user} />
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    onClick={() => updateRole(user.id, "member")}
-                    disabled={loading === user.id}
-                  >
-                    Approve
-                  </Button>
-                </div>
+                <Button
+                  size="sm"
+                  onClick={() => updateRole(user.id, "member")}
+                  disabled={updating === user.id}
+                >
+                  Approve
+                </Button>
               </CardContent>
             </Card>
           ))
@@ -86,7 +99,6 @@ export default function AdminPanel({ pending: initialPending, members: initialMe
 
       <Separator />
 
-      {/* Current members */}
       <div className="space-y-3">
         <h2 className="font-semibold text-gray-700">Members ({members.length})</h2>
         {members.map((user) => (
@@ -107,7 +119,7 @@ export default function AdminPanel({ pending: initialPending, members: initialMe
                     size="sm"
                     variant="outline"
                     onClick={() => updateRole(user.id, "admin")}
-                    disabled={loading === user.id}
+                    disabled={updating === user.id}
                   >
                     Make Admin
                   </Button>
@@ -117,7 +129,7 @@ export default function AdminPanel({ pending: initialPending, members: initialMe
                     size="sm"
                     variant="outline"
                     onClick={() => updateRole(user.id, "member")}
-                    disabled={loading === user.id}
+                    disabled={updating === user.id}
                   >
                     Demote
                   </Button>
@@ -127,7 +139,7 @@ export default function AdminPanel({ pending: initialPending, members: initialMe
                   variant="outline"
                   className="text-red-600 border-red-200 hover:bg-red-50"
                   onClick={() => updateRole(user.id, "pending")}
-                  disabled={loading === user.id}
+                  disabled={updating === user.id}
                 >
                   Revoke
                 </Button>

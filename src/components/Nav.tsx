@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { Link } from "react-router-dom";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -18,7 +18,7 @@ export default function Nav({ profile }: { profile: Profile }) {
   return (
     <header className="bg-white border-b border-amber-100 sticky top-0 z-10">
       <div className="container mx-auto px-4 max-w-2xl h-14 flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-2 font-bold text-amber-900 text-lg">
+        <Link to="/" className="flex items-center gap-2 font-bold text-amber-900 text-lg">
           🧀 Cheese Club
         </Link>
 
@@ -44,7 +44,7 @@ export default function Nav({ profile }: { profile: Profile }) {
             {profile.role === "admin" && (
               <>
                 <DropdownMenuItem asChild>
-                  <Link href="/admin">Admin Panel</Link>
+                  <Link to="/admin">Admin Panel</Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
               </>

@@ -1,9 +1,5 @@
-"use client";
-
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
-import Link from "next/link";
-import Image from "next/image";
+import { Link, useParams } from "react-router-dom";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import { Card, CardContent } from "@/components/ui/card";
@@ -16,7 +12,7 @@ type CheeseWithReviews = Cheese & {
   reviews: { rating: number | null; is_favorite: boolean; user_id: string }[];
 };
 
-export default function TastingPage() {
+export default function TastingDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { user, profile } = useAuth();
   const [tasting, setTasting] = useState<Tasting | null>(null);
@@ -46,22 +42,16 @@ export default function TastingPage() {
   return (
     <div className="space-y-6">
       <div>
-        <Link href="/" className="text-sm text-amber-700 hover:underline">
-          ← All tastings
-        </Link>
+        <Link to="/" className="text-sm text-amber-700 hover:underline">← All tastings</Link>
         <div className="flex items-center justify-between mt-2">
-          <h1 className="text-2xl font-bold text-amber-900">
-            {formatDate(tasting.date)}
-          </h1>
+          <h1 className="text-2xl font-bold text-amber-900">{formatDate(tasting.date)}</h1>
           {profile?.role === "admin" && (
             <Button asChild size="sm">
-              <Link href={`/tastings/${id}/cheeses/new`}>+ Add Cheese</Link>
+              <Link to={`/tastings/${id}/cheeses/new`}>+ Add Cheese</Link>
             </Button>
           )}
         </div>
-        {tasting.notes && (
-          <p className="text-gray-600 mt-1">{tasting.notes}</p>
-        )}
+        {tasting.notes && <p className="text-gray-600 mt-1">{tasting.notes}</p>}
       </div>
 
       <div className="space-y-3">
@@ -69,23 +59,18 @@ export default function TastingPage() {
           const myReview = cheese.reviews?.find((r) => r.user_id === user?.id);
           const ratedReviews = cheese.reviews?.filter((r) => r.rating) ?? [];
           const avgRating = ratedReviews.length
-            ? (
-                ratedReviews.reduce((sum, r) => sum + (r.rating ?? 0), 0) /
-                ratedReviews.length
-              ).toFixed(1)
+            ? (ratedReviews.reduce((sum, r) => sum + (r.rating ?? 0), 0) / ratedReviews.length).toFixed(1)
             : null;
 
           return (
-            <Link key={cheese.id} href={`/cheeses/${cheese.id}`}>
+            <Link key={cheese.id} to={`/cheeses/${cheese.id}`}>
               <Card className="hover:shadow-md transition-shadow cursor-pointer border-amber-100">
                 <CardContent className="flex gap-3 py-4">
                   {cheese.front_image_url && (
                     <div className="w-16 h-16 rounded-lg overflow-hidden flex-shrink-0 bg-amber-100">
-                      <Image
+                      <img
                         src={cheese.front_image_url}
                         alt={cheese.name}
-                        width={64}
-                        height={64}
                         className="w-full h-full object-cover"
                       />
                     </div>
@@ -93,26 +78,18 @@ export default function TastingPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-2">
                       <p className="font-semibold text-amber-900">{cheese.name}</p>
-                      {myReview?.is_favorite && (
-                        <span className="text-amber-400 text-lg">★</span>
-                      )}
+                      {myReview?.is_favorite && <span className="text-amber-400 text-lg">★</span>}
                     </div>
                     <p className="text-sm text-gray-500">
                       {[cheese.region, cheese.country].filter(Boolean).join(", ")}
                     </p>
                     <div className="flex items-center gap-2 mt-1">
                       {cheese.milk_type && (
-                        <Badge variant="outline" className="text-xs">
-                          {cheese.milk_type}
-                        </Badge>
+                        <Badge variant="outline" className="text-xs">{cheese.milk_type}</Badge>
                       )}
-                      {avgRating && (
-                        <span className="text-xs text-gray-500">★ {avgRating} avg</span>
-                      )}
+                      {avgRating && <span className="text-xs text-gray-500">★ {avgRating} avg</span>}
                       {myReview?.rating && (
-                        <span className="text-xs text-amber-700 font-medium">
-                          You: {myReview.rating}/5
-                        </span>
+                        <span className="text-xs text-amber-700 font-medium">You: {myReview.rating}/5</span>
                       )}
                     </div>
                   </div>

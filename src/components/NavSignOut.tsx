@@ -1,17 +1,16 @@
-"use client";
-
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { createClient } from "@/lib/supabase/client";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 
 export default function NavSignOut() {
-  const supabase = createClient();
+  const navigate = useNavigate();
   const [signingOut, setSigningOut] = useState(false);
 
   const signOut = () => {
     setSigningOut(true);
-    supabase.auth.signOut().catch(() => {});
-    window.location.href = "/cheesecard/login";
+    createClient().auth.signOut().catch(() => {});
+    navigate("/login", { replace: true });
   };
 
   return (

@@ -25,6 +25,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const supabase = createClient();
 
+    // Handle OAuth PKCE callback: Supabase redirects to the base URL with
+    // ?code=... in the query string. Exchange it here, then clean the URL.
+    const code = new URLSearchParams(window.location.search).get("code");
+    if (code) {
+      supabase.auth.exchangeCodeForSession(code).finally(() => {
+        window.history.replaceState({}, "", window.location.pathname);
+      });
+    }
+
     const fetchProfile = async (userId: string) => {
       try {
         const { data } = await supabase
@@ -33,18 +42,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           .eq("id", userId)
           .single();
         setProfile(data as Profile | null);
-      } catch (e) {
-        console.error("fetchProfile error:", e);
+      } catch {
         setProfile(null);
       }
     };
 
-    // onAuthStateChange fires INITIAL_SESSION immediately from localStorage cache
-    // (no network wait), then TOKEN_REFRESHED after background token refresh.
-    // This is much faster than getSession() which blocks on token refresh.
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
+    } = supabase.auth.onAuthStateChange(async (_event, session) => {
       setUser(session?.user ?? null);
       if (session?.user) {
         await fetchProfile(session.user.id);
