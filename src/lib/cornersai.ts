@@ -46,7 +46,9 @@ export async function detectCornersWithAI(
   file: File,
 ): Promise<[number, number][] | null> {
   try {
-    const { blob, w, h, scaleX, scaleY } = await resizeImage(file, 800);
+    // Keep within a single 512×512 tile for Claude Vision coordinate accuracy.
+    // Multi-tile images cause coordinate drift at tile boundaries.
+    const { blob, w, h, scaleX, scaleY } = await resizeImage(file, 512);
     console.log(`[cornersai] sending ${w}×${h} JPEG to detect-corners (scaleX=${scaleX.toFixed(3)} scaleY=${scaleY.toFixed(3)})`);
 
     const form = new FormData();
