@@ -32,35 +32,25 @@ function getJpegDimensions(buffer: ArrayBuffer): { w: number; h: number } | null
 }
 
 function buildPrompt(imgW: number, imgH: number): string {
-  return `You are analyzing a photo of a cheese information card. The image is ${imgW} pixels wide by ${imgH} pixels tall.
+  const dimNote = imgW > 0 && imgH > 0
+    ? `The image is exactly ${imgW}×${imgH} pixels. All coordinates must be integers in [0,${imgW}] for x and [0,${imgH}] for y.`
+    : "All coordinates must be integers within the image bounds.";
+  return `You are analyzing a photo of a cheese information card. ${dimNote}
 
-The card has these characteristics:
-- A solid BLACK BORDER along all four edges (the most visually distinctive feature)
-- Portrait orientation (taller than wide, roughly 4:7 width-to-height ratio)
-- Slightly rounded corners
-- Resting on a surface, photographed from above at an angle
+The card has a solid BLACK BORDER along all four edges and slightly rounded corners. It is resting on a surface and photographed from an angle, so it appears with PERSPECTIVE DISTORTION as an irregular quadrilateral.
 
-CRITICAL: The camera angle creates PERSPECTIVE DISTORTION. The card appears as an irregular quadrilateral — NOT a rectangle. The four corner coordinates will NOT satisfy tl.y=tr.y or tl.x=bl.x. If your answer would form a perfect rectangle, you have made an error.
+IMPORTANT: Due to perspective, the four corner pixel coordinates will NOT form a rectangle. tl.y ≠ tr.y, bl.y ≠ br.y, tl.x ≠ bl.x, tr.x ≠ br.x. If they would form a rectangle, look again more carefully.
 
-Task: Find the four corners of the card's outer black border.
-- Where corners are rounded, mentally extend the straight border edges until they meet — that intersection is the corner.
-- Trace each of the 4 edges as a straight line. The corners are where these lines cross.
+Find the four corners where the straight border edges of the card intersect (extending past any rounded corner). Think step by step, then output the JSON on the last line.
 
-Think step by step:
-1. Where is the card in the image? Describe its position.
-2. Find the top edge line — what angle does it run at?
-3. Find the bottom edge line — what angle?
-4. Find the left edge line — what angle?
-5. Find the right edge line — what angle?
-6. Compute or estimate the four intersection points.
+1. Locate the card's black border edges in the image.
+2. For each of the 4 edges, determine the exact pixel positions where it starts and ends.
+3. Compute the corner intersections.
 
-After your reasoning, output ONLY the JSON on the final line (no markdown fences):
+Final line must be ONLY this JSON:
 {"tl":[x,y],"tr":[x,y],"br":[x,y],"bl":[x,y]}
 
-tl=top-left, tr=top-right, br=bottom-right, bl=bottom-left.
-x = pixels from left edge (0–${imgW}), y = pixels from top edge (0–${imgH}). All integers.
-
-If you cannot find the card's black border, output on the final line: {"error":"not found"}`;
+If the card is not visible, final line: {"error":"not found"}`;
 }
 
 Deno.serve(async (req) => {
@@ -113,7 +103,7 @@ Deno.serve(async (req) => {
 
   const prompt = imgW > 0 && imgH > 0 ? buildPrompt(imgW, imgH) : buildPrompt(0, 0);
   const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
+    model: "claude-opus-4-6",
     max_tokens: 1024,
     messages: [{
       role: "user",
