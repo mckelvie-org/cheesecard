@@ -47,20 +47,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     };
 
-    // Fallback: if onAuthStateChange never fires (stale/invalid token causes
-    // a silent refresh hang), stop loading after 4s and redirect to /login.
-    const timeout = setTimeout(() => setLoading(false), 4000);
+    const timeout = setTimeout(() => {
+      console.warn("[auth] timeout: onAuthStateChange never fired");
+      setLoading(false);
+    }, 4000);
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      console.log("[auth] onAuthStateChange fired, event:", _event, "user:", session?.user?.id ?? "none");
       clearTimeout(timeout);
       setUser(session?.user ?? null);
       if (session?.user) {
+        console.log("[auth] fetching profile...");
         await fetchProfile(session.user.id);
+        console.log("[auth] profile fetched");
       } else {
         setProfile(null);
       }
+      console.log("[auth] setLoading(false)");
       setLoading(false);
     });
 
