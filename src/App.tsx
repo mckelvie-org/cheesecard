@@ -16,12 +16,12 @@ import { createClient } from "@/lib/supabase/client";
 function LogoutPage() {
   const navigate = useNavigate();
   useEffect(() => {
-    const supabase = createClient();
-    supabase.auth.signOut().finally(() => {
-      localStorage.clear();
-      sessionStorage.clear();
-      navigate("/login", { replace: true });
-    });
+    // Clear local storage first so the app unblocks immediately,
+    // then attempt a best-effort server-side signOut in the background.
+    localStorage.clear();
+    sessionStorage.clear();
+    navigate("/login", { replace: true });
+    createClient().auth.signOut().catch(() => {/* ignore — session may already be invalid */});
   }, [navigate]);
   return <p style={{ padding: "2rem" }}>Signing out…</p>;
 }
