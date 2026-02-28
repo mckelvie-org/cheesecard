@@ -1,4 +1,5 @@
-import { HashRouter, Routes, Route } from "react-router-dom";
+import { HashRouter, Routes, Route, useNavigate } from "react-router-dom";
+import { useEffect } from "react";
 import { AuthProvider } from "@/lib/auth-context";
 import { Toaster } from "@/components/ui/sonner";
 import LoginPage from "@/pages/LoginPage";
@@ -10,6 +11,20 @@ import NewTastingPage from "@/pages/app/NewTastingPage";
 import CheesePage from "@/pages/app/CheesePage";
 import NewCheesePage from "@/pages/app/NewCheesePage";
 import AdminPage from "@/pages/app/AdminPage";
+import { createClient } from "@/lib/supabase/client";
+
+function LogoutPage() {
+  const navigate = useNavigate();
+  useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.signOut().finally(() => {
+      localStorage.clear();
+      sessionStorage.clear();
+      navigate("/login", { replace: true });
+    });
+  }, [navigate]);
+  return <p style={{ padding: "2rem" }}>Signing out…</p>;
+}
 
 export default function App() {
   return (
@@ -17,6 +32,7 @@ export default function App() {
       <HashRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/logout" element={<LogoutPage />} />
           <Route path="/pending" element={<PendingPage />} />
           <Route element={<AppLayout />}>
             <Route path="/" element={<TastingsPage />} />
