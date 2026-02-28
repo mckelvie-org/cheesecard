@@ -31,23 +31,21 @@ function getJpegDimensions(buffer: ArrayBuffer): { w: number; h: number } | null
   return null;
 }
 
-function buildPrompt(imgW: number, imgH: number): string {
-  const dimNote = imgW > 0 && imgH > 0
-    ? `The image is exactly ${imgW}×${imgH} pixels. All coordinates must be integers in [0,${imgW}] for x and [0,${imgH}] for y.`
-    : "All coordinates must be integers within the image bounds.";
-  return `You are analyzing a photo of a cheese information card. ${dimNote}
+function buildPrompt(_imgW: number, _imgH: number): string {
+  return `You are analyzing a photo of a cheese information card. The card has a solid BLACK BORDER along all four edges and slightly rounded corners. It is resting on a surface and photographed from an angle, so it appears with PERSPECTIVE DISTORTION as an irregular quadrilateral.
 
-The card has a solid BLACK BORDER along all four edges and slightly rounded corners. It is resting on a surface and photographed from an angle, so it appears with PERSPECTIVE DISTORTION as an irregular quadrilateral.
+Use a normalized coordinate system: (0,0) = top-left corner of the image, (1000,1000) = bottom-right corner. Express all coordinates as integers 0–1000.
 
-IMPORTANT: Due to perspective, the four corner pixel coordinates will NOT form a rectangle. tl.y ≠ tr.y, bl.y ≠ br.y, tl.x ≠ bl.x, tr.x ≠ br.x. If they would form a rectangle, look again more carefully.
+IMPORTANT: Due to perspective, the four corners will NOT form a rectangle — the values will differ slightly in both x and y. If your answer would form a perfect rectangle, look more carefully at the perspective.
 
-Find the four corners where the straight border edges of the card intersect (extending past any rounded corner). Think step by step, then output the JSON on the last line.
+Find the four corners where the straight border edges intersect (extending past the rounded corners). Think step by step:
+1. What fraction of the image width does the left edge of the card start at? (×1000)
+2. What fraction does the right edge end at? (×1000)
+3. What fraction of the image height does the top edge sit at? (×1000)
+4. What fraction does the bottom edge sit at? (×1000)
+5. Account for the slight tilt/perspective to get per-corner values.
 
-1. Locate the card's black border edges in the image.
-2. For each of the 4 edges, determine the exact pixel positions where it starts and ends.
-3. Compute the corner intersections.
-
-Final line must be ONLY this JSON:
+Final line must be ONLY this JSON (no markdown):
 {"tl":[x,y],"tr":[x,y],"br":[x,y],"bl":[x,y]}
 
 If the card is not visible, final line: {"error":"not found"}`;

@@ -67,12 +67,15 @@ export async function detectCornersWithAI(
       return null;
     }
 
-    // Scale from resized-image coordinates back to original-image coordinates
+    // Claude returns normalized 0–1000 coords; convert to original-image pixels.
+    // w * scaleX = naturalWidth, h * scaleY = naturalHeight.
+    const naturalWidth = w * scaleX;
+    const naturalHeight = h * scaleY;
     const corners: [number, number][] = [
-      [Math.round(data.tl[0] * scaleX), Math.round(data.tl[1] * scaleY)],
-      [Math.round(data.tr[0] * scaleX), Math.round(data.tr[1] * scaleY)],
-      [Math.round(data.br[0] * scaleX), Math.round(data.br[1] * scaleY)],
-      [Math.round(data.bl[0] * scaleX), Math.round(data.bl[1] * scaleY)],
+      [Math.round(data.tl[0] / 1000 * naturalWidth), Math.round(data.tl[1] / 1000 * naturalHeight)],
+      [Math.round(data.tr[0] / 1000 * naturalWidth), Math.round(data.tr[1] / 1000 * naturalHeight)],
+      [Math.round(data.br[0] / 1000 * naturalWidth), Math.round(data.br[1] / 1000 * naturalHeight)],
+      [Math.round(data.bl[0] / 1000 * naturalWidth), Math.round(data.bl[1] / 1000 * naturalHeight)],
     ];
 
     // Sanity-check: aspect ratio should be consistent with a cheese card (4:7 = 0.571).
