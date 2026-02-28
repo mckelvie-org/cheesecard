@@ -47,9 +47,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     };
 
+    // Fallback: if onAuthStateChange never fires (stale/invalid token causes
+    // a silent refresh hang), stop loading after 4s and redirect to /login.
+    const timeout = setTimeout(() => setLoading(false), 4000);
+
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      clearTimeout(timeout);
       setUser(session?.user ?? null);
       if (session?.user) {
         await fetchProfile(session.user.id);
@@ -59,7 +64,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      clearTimeout(timeout);
+      subscription.unsubscribe();
+    };
   }, []);
 
   return (
