@@ -22,17 +22,15 @@ function loadOpenCV(): Promise<void> {
   if (cvLoadPromise) return cvLoadPromise;
 
   cvLoadPromise = new Promise((resolve, reject) => {
+    window.Module = {
+      onRuntimeInitialized: () => {
+        cvReady = true;
+        resolve();
+      },
+    };
     const script = document.createElement("script");
     script.src = "https://docs.opencv.org/4.8.0/opencv.js";
     script.async = true;
-    script.onload = () => {
-      window.Module = {
-        onRuntimeInitialized: () => {
-          cvReady = true;
-          resolve();
-        },
-      };
-    };
     script.onerror = reject;
     document.head.appendChild(script);
   });
