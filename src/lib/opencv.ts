@@ -117,34 +117,21 @@ export async function detectCardCorners(file: File): Promise<[number, number][] 
             continue;
           }
 
-          const perimeter = cv.arcLength(contour, true);
-          const approx = new cv.Mat();
-          cv.approxPolyDP(contour, approx, 0.02 * perimeter, true);
+          // Reject if the contour's bounding box touches the image boundary —
+          // filters out the "entire image outline" false positive
+          const br = cv.boundingRect(contour);
+          const touchesBoundary =
+            br.x < margin || br.y < margin ||
+            br.x + br.width > procW - margin ||
+            br.y + br.height > procH - margin;
 
-          if (approx.rows === 4 && area > bestArea) {
-            // Reject if any corner is within 5% of image boundary — this
-            // filters out the "entire image outline" false positive
-            let touchesBoundary = false;
-            for (let j = 0; j < 4; j++) {
-              const x = approx.intAt(j, 0);
-              const y = approx.intAt(j, 1);
-              if (x < margin || x > procW - margin || y < margin || y > procH - margin) {
-                touchesBoundary = true;
-                break;
-              }
-            }
-
-            if (!touchesBoundary) {
-              bestContour?.delete();
-              bestArea = area;
-              bestContour = approx;
-            } else {
-              approx.delete();
-            }
+          if (!touchesBoundary && area > bestArea) {
+            bestContour?.delete();
+            bestArea = area;
+            bestContour = contour;
           } else {
-            approx.delete();
+            contour.delete();
           }
-          contour.delete();
         }
 
         if (!bestContour) {
@@ -152,14 +139,20 @@ export async function detectCardCorners(file: File): Promise<[number, number][] 
           return;
         }
 
-        // Extract corners and scale back to original image resolution
+        // Use minAreaRect instead of approxPolyDP — handles rotated cards
+        // correctly and won't snap to axis-aligned approximations
+        const rotatedRect = cv.minAreaRect(bestContour);
+        const boxMat = new cv.Mat();
+        cv.boxPoints(rotatedRect, boxMat);
+
         const pts: [number, number][] = [];
         for (let i = 0; i < 4; i++) {
           pts.push([
-            Math.round(bestContour.intAt(i, 0) / scale),
-            Math.round(bestContour.intAt(i, 1) / scale),
+            Math.round(boxMat.data32F[i * 2] / scale),
+            Math.round(boxMat.data32F[i * 2 + 1] / scale),
           ]);
         }
+        boxMat.delete();
 
         resolve(orderPoints(pts));
       } catch {

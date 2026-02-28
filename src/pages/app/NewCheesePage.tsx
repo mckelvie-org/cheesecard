@@ -217,6 +217,7 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
   const loupeRef = useRef<HTMLCanvasElement>(null);
 
   const [corners, setCorners] = useState<[number, number][]>([[0, 0], [1, 0], [1, 1], [0, 1]]);
+  const cornersRef = useRef<[number, number][]>([[0, 0], [1, 0], [1, 1], [0, 1]]);
   const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
   const [dragging, setDragging] = useState<number | null>(null);
   const [loupeVisible, setLoupeVisible] = useState(false);
@@ -232,19 +233,23 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
     // Default to 5% inset so handles are away from the edges (avoids browser
     // back-swipe and is a better starting point than the extreme corners)
     const i = 0.05;
-    setCorners([[w*i, h*i], [w*(1-i), h*i], [w*(1-i), h*(1-i)], [w*i, h*(1-i)]]);
+    const inset: [number, number][] = [[w*i, h*i], [w*(1-i), h*i], [w*(1-i), h*(1-i)], [w*i, h*(1-i)]];
+    cornersRef.current = inset;
+    setCorners(inset);
 
     detectCardCorners(imageFile).then((detected) => {
       if (detected && imgRef.current) {
         const scaleX = imgRef.current.clientWidth / imgRef.current.naturalWidth;
         const scaleY = imgRef.current.clientHeight / imgRef.current.naturalHeight;
-        setCorners(detected.map(([x, y]) => [x * scaleX, y * scaleY] as [number, number]));
+        const mapped = detected.map(([x, y]) => [x * scaleX, y * scaleY] as [number, number]);
+        cornersRef.current = mapped;
+        setCorners(mapped);
       }
       setDetecting(false);
     });
   }, [imageFile]);
 
-  const drawLoupe = useCallback((dispX: number, dispY: number) => {
+  const drawLoupe = useCallback((dispX: number, dispY: number, activeIdx: number) => {
     const img = imgRef.current;
     const canvas = loupeRef.current;
     if (!img || !canvas) return;
@@ -256,15 +261,43 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
     const imgX = dispX * scaleX;
     const imgY = dispY * scaleY;
 
-    // Show ~60 display pixels each side → 1.33× zoom at 160px canvas;
-    // enough to see a rounded card corner with surrounding context
+    // Show ~60 display pixels each side → 1.33× zoom at 160px canvas
     const srcHalfW = 60 * scaleX;
     const srcHalfH = 60 * scaleY;
 
     ctx.clearRect(0, 0, 160, 160);
+
+    // Clip everything to the circular loupe boundary
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(80, 80, 80, 0, Math.PI * 2);
+    ctx.clip();
+
     ctx.drawImage(img, imgX - srcHalfW, imgY - srcHalfH, srcHalfW * 2, srcHalfH * 2, 0, 0, 160, 160);
 
-    // Amber crosshair
+    // Draw edge lines toward the two adjacent corners (shows card edge direction)
+    // loupe canvas px per display px: 160 / (60*2) = 160/120 ≈ 1.333
+    const loupeScale = 160 / 120;
+    const current = cornersRef.current;
+    ctx.strokeStyle = "#f59e0b";
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([5, 4]);
+    for (const adjIdx of [(activeIdx + 3) % 4, (activeIdx + 1) % 4]) {
+      const dx = (current[adjIdx][0] - dispX) * loupeScale;
+      const dy = (current[adjIdx][1] - dispY) * loupeScale;
+      const len = Math.sqrt(dx * dx + dy * dy);
+      if (len < 1) continue;
+      // Project line out to the circle edge (radius 80)
+      const t = 80 / len;
+      ctx.beginPath();
+      ctx.moveTo(80, 80);
+      ctx.lineTo(80 + dx * t, 80 + dy * t);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    ctx.restore();
+
+    // Amber crosshair (drawn on top, outside clip so it's always sharp)
     ctx.strokeStyle = "#f59e0b";
     ctx.lineWidth = 1.5;
     ctx.beginPath();
@@ -288,7 +321,7 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
     setDragging(index);
     setLoupeVisible(true);
     const pos = getPos(e);
-    drawLoupe(pos[0], pos[1]);
+    drawLoupe(pos[0], pos[1], index);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [drawLoupe]);
 
@@ -300,9 +333,12 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
     // remain fully visible and draggable when at the image edge
     const cx = Math.max(-20, Math.min(imgSize.w + 20, x));
     const cy = Math.max(-20, Math.min(imgSize.h + 20, y));
-    setCorners((prev) => prev.map((c, i) => i === dragging ? [cx, cy] : c) as [number, number][]);
+    // Sync ref before drawing so edge lines see the updated corner position
+    const newCorners = cornersRef.current.map((c, i) => i === dragging ? [cx, cy] : c) as [number, number][];
+    cornersRef.current = newCorners;
+    setCorners(newCorners);
     // Loupe samples clamped to valid image area
-    drawLoupe(Math.max(0, Math.min(imgSize.w, x)), Math.max(0, Math.min(imgSize.h, y)));
+    drawLoupe(Math.max(0, Math.min(imgSize.w, x)), Math.max(0, Math.min(imgSize.h, y)), dragging);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dragging, imgSize, drawLoupe]);
 
@@ -518,7 +554,7 @@ function MetadataStep({
       {/* Portrait thumbnails — 4:7 aspect ratio, object-contain */}
       <div className="flex gap-3">
         {[{ url: photos.frontUrl, label: "Front" }, { url: photos.backUrl, label: "Back" }].map(({ url, label }) => (
-          <div key={label} className="relative overflow-hidden rounded-lg border bg-gray-50" style={{ width: 72, aspectRatio: "4/7" }}>
+          <div key={label} className="relative overflow-hidden rounded-lg border bg-gray-50 flex-1" style={{ aspectRatio: "4/7" }}>
             <img src={url} alt={label} className="absolute inset-0 w-full h-full object-contain" />
           </div>
         ))}
