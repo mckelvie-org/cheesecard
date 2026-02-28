@@ -89,6 +89,8 @@ function CardPhotoStep({
   const [extracting, setExtracting] = useState(false);
   const frontInputRef = useRef<HTMLInputElement>(null);
   const backInputRef = useRef<HTMLInputElement>(null);
+  const frontLibraryRef = useRef<HTMLInputElement>(null);
+  const backLibraryRef = useRef<HTMLInputElement>(null);
 
   const handlePhotoSelect = useCallback((file: File, side: CardSide) => {
     setAdjusting({ file, url: URL.createObjectURL(file), side });
@@ -161,32 +163,30 @@ function CardPhotoStep({
         {(["front", "back"] as CardSide[]).map((side) => {
           const photo = side === "front" ? front : back;
           const inputRef = side === "front" ? frontInputRef : backInputRef;
+          const libraryRef = side === "front" ? frontLibraryRef : backLibraryRef;
+          const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+            const file = e.target.files?.[0];
+            if (file) handlePhotoSelect(file, side);
+            e.target.value = "";
+          };
           return (
-            <div key={side}>
-              <input
-                ref={inputRef}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                className="hidden"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) handlePhotoSelect(file, side);
-                  e.target.value = "";
-                }}
-              />
-              {/* Portrait 4:7 thumbnail — plain div avoids Card's py-6 padding */}
+            <div key={side} className="flex flex-col gap-1">
+              {/* Camera input (primary) */}
+              <input ref={inputRef} type="file" accept="image/*" capture="environment"
+                className="hidden" onChange={onChange} />
+              {/* Library input (secondary — no capture attribute) */}
+              <input ref={libraryRef} type="file" accept="image/*"
+                className="hidden" onChange={onChange} />
+
+              {/* Portrait 4:7 thumbnail — tap to open camera */}
               <div
                 className="border-2 border-dashed border-amber-200 rounded-xl cursor-pointer hover:border-amber-400 transition-colors overflow-hidden relative"
                 style={{ aspectRatio: "4/7" }}
                 onClick={() => inputRef.current?.click()}
               >
                 {photo ? (
-                  <img
-                    src={photo.url}
-                    alt={`Card ${side}`}
-                    className="absolute inset-0 w-full h-full object-contain"
-                  />
+                  <img src={photo.url} alt={`Card ${side}`}
+                    className="absolute inset-0 w-full h-full object-contain" />
                 ) : (
                   <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
                     <span className="text-3xl">📷</span>
@@ -195,6 +195,15 @@ function CardPhotoStep({
                   </div>
                 )}
               </div>
+
+              {/* Library picker — secondary, low-prominence */}
+              <button
+                type="button"
+                className="text-xs text-amber-700/60 hover:text-amber-700 text-center py-0.5"
+                onClick={() => libraryRef.current?.click()}
+              >
+                📁 library
+              </button>
             </div>
           );
         })}
