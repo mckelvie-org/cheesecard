@@ -8,7 +8,7 @@ import type { Profile } from "./supabase/types";
 interface AuthContextType {
   user: User | null;
   profile: Profile | null;
-  loading: boolean;
+  loading: boolean;      // true while auth state OR profile is unknown
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -16,6 +16,8 @@ const AuthContext = createContext<AuthContextType>({
   profile: null,
   loading: true,
 });
+
+const PROFILE_CACHE_KEY = (uid: string) => `cheesecard:profile:${uid}`;
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -34,39 +36,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
     }
 
-    const fetchProfile = async (userId: string) => {
+    // Fetch profile from DB and update cache. Fire-and-forget; does not
+    // block the loading state when a cached profile is already available.
+    const refreshProfile = async (userId: string) => {
       try {
         const { data } = await supabase
           .from("profiles")
           .select("*")
           .eq("id", userId)
           .single();
-        setProfile(data as Profile | null);
+        const p = data as Profile | null;
+        setProfile(p);
+        if (p) localStorage.setItem(PROFILE_CACHE_KEY(userId), JSON.stringify(p));
+        else localStorage.removeItem(PROFILE_CACHE_KEY(userId));
       } catch {
-        setProfile(null);
+        // Leave whatever is already in state (cache or null).
       }
     };
 
-    const timeout = setTimeout(() => {
-      console.warn("[auth] timeout: onAuthStateChange never fired");
-      setLoading(false);
-    }, 4000);
+    // Fallback: if onAuthStateChange never fires, stop loading after 5s.
+    const timeout = setTimeout(() => setLoading(false), 5000);
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      console.log("[auth] onAuthStateChange fired, event:", _event, "user:", session?.user?.id ?? "none");
+    } = supabase.auth.onAuthStateChange((_event, session) => {
       clearTimeout(timeout);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        console.log("[auth] fetching profile...");
-        await fetchProfile(session.user.id);
-        console.log("[auth] profile fetched");
+      const sessionUser = session?.user ?? null;
+      setUser(sessionUser);
+
+      if (sessionUser) {
+        // Load cached profile instantly so the page renders without a DB round-trip.
+        const cached = localStorage.getItem(PROFILE_CACHE_KEY(sessionUser.id));
+        if (cached) {
+          try { setProfile(JSON.parse(cached)); } catch { /* ignore bad cache */ }
+        }
+        setLoading(false);          // unblock render immediately
+        refreshProfile(sessionUser.id);  // update in background
       } else {
         setProfile(null);
+        setLoading(false);
       }
-      console.log("[auth] setLoading(false)");
-      setLoading(false);
     });
 
     return () => {
