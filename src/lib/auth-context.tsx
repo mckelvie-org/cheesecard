@@ -84,6 +84,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  // Reactively update profile when an admin changes our role.
+  // This is what makes PendingPage redirect automatically on approval.
+  useEffect(() => {
+    if (!user?.id) return;
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`profile:${user.id}`)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "profiles", filter: `id=eq.${user.id}` },
+        (payload) => {
+          const p = payload.new as Profile;
+          setProfile(p);
+          localStorage.setItem(PROFILE_CACHE_KEY(user.id), JSON.stringify(p));
+        }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [user?.id]);
+
   return (
     <AuthContext.Provider value={{ user, profile, loading }}>
       {children}
