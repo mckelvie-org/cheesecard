@@ -118,7 +118,7 @@ export default function Nav({ profile }: { profile: Profile }) {
                     <DropdownMenuItem
                       key={n.id}
                       className="flex flex-col items-start gap-0.5 px-4 py-3 cursor-pointer"
-                      onSelect={() => navigate(notificationHref(n))}
+                      onSelect={() => { navigate(notificationHref(n)); setTimeout(() => (document.activeElement as HTMLElement)?.blur(), 0); }}
                     >
                       <span className="text-sm text-gray-900 leading-snug">{notificationText(n)}</span>
                       <span className="text-xs text-gray-400">{timeAgo(n.created_at)}</span>
