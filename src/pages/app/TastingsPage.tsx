@@ -20,14 +20,27 @@ export default function TastingsPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    createClient()
-      .from("tastings")
-      .select("*, cheeses(id)")
-      .order("date", { ascending: false })
-      .then(({ data }) => {
-        setTastings((data ?? []) as TastingRow[]);
-        setLoading(false);
-      });
+    const supabase = createClient();
+
+    const fetchTastings = () =>
+      supabase
+        .from("tastings")
+        .select("*, cheeses(id)")
+        .order("date", { ascending: false })
+        .then(({ data }) => {
+          setTastings((data ?? []) as TastingRow[]);
+          setLoading(false);
+        });
+
+    fetchTastings();
+
+    const channel = supabase
+      .channel("tastings-page")
+      .on("postgres_changes", { event: "*", schema: "public", table: "tastings" }, fetchTastings)
+      .on("postgres_changes", { event: "*", schema: "public", table: "cheeses" }, fetchTastings)
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   }, []);
 
   if (loading) return <p className="text-center py-12 text-gray-400">Loading...</p>;

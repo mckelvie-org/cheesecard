@@ -26,18 +26,30 @@ export default function TastingDetailPage() {
   useEffect(() => {
     if (!id) return;
     const supabase = createClient();
-    Promise.all([
-      supabase.from("tastings").select("*").eq("id", id).single(),
-      supabase
-        .from("cheeses")
-        .select("*, reviews(rating, is_favorite, user_id)")
-        .eq("tasting_id", id)
-        .order("created_at"),
-    ]).then(([{ data: t }, { data: c }]) => {
-      setTasting(t as Tasting | null);
-      setCheeses((c ?? []) as CheeseWithReviews[]);
-      setLoading(false);
-    });
+
+    const fetchData = () =>
+      Promise.all([
+        supabase.from("tastings").select("*").eq("id", id).single(),
+        supabase
+          .from("cheeses")
+          .select("*, reviews(rating, is_favorite, user_id)")
+          .eq("tasting_id", id)
+          .order("created_at"),
+      ]).then(([{ data: t }, { data: c }]) => {
+        setTasting(t as Tasting | null);
+        setCheeses((c ?? []) as CheeseWithReviews[]);
+        setLoading(false);
+      });
+
+    fetchData();
+
+    const channel = supabase
+      .channel(`tasting-detail-${id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "tastings", filter: `id=eq.${id}` }, fetchData)
+      .on("postgres_changes", { event: "*", schema: "public", table: "cheeses", filter: `tasting_id=eq.${id}` }, fetchData)
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   }, [id]);
 
   const handleDeleteTasting = async () => {

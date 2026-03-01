@@ -36,18 +36,30 @@ export default function CheesePage() {
   useEffect(() => {
     if (!cheeseId) return;
     const supabase = createClient();
-    Promise.all([
-      supabase.from("cheeses").select("*").eq("id", cheeseId).single(),
-      supabase.from("reviews").select("*").eq("cheese_id", cheeseId).order("created_at"),
-      supabase.from("comments").select("*").eq("cheese_id", cheeseId).order("created_at"),
-      supabase.from("profiles").select("id, full_name, avatar_url").in("role", ["member", "admin"]),
-    ]).then(([{ data: c }, { data: r }, { data: co }, { data: p }]) => {
-      setCheese(c as Cheese | null);
-      setReviews((r ?? []) as Review[]);
-      setComments((co ?? []) as Comment[]);
-      setProfileMap(Object.fromEntries(((p ?? []) as ProfileMini[]).map((x) => [x.id, x])));
-      setLoading(false);
-    });
+
+    const fetchData = () =>
+      Promise.all([
+        supabase.from("cheeses").select("*").eq("id", cheeseId).single(),
+        supabase.from("reviews").select("*").eq("cheese_id", cheeseId).order("created_at"),
+        supabase.from("comments").select("*").eq("cheese_id", cheeseId).order("created_at"),
+        supabase.from("profiles").select("id, full_name, avatar_url").in("role", ["member", "admin"]),
+      ]).then(([{ data: c }, { data: r }, { data: co }, { data: p }]) => {
+        setCheese(c as Cheese | null);
+        setReviews((r ?? []) as Review[]);
+        setComments((co ?? []) as Comment[]);
+        setProfileMap(Object.fromEntries(((p ?? []) as ProfileMini[]).map((x) => [x.id, x])));
+        setLoading(false);
+      });
+
+    fetchData();
+
+    const channel = supabase
+      .channel(`cheese-${cheeseId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "reviews", filter: `cheese_id=eq.${cheeseId}` }, fetchData)
+      .on("postgres_changes", { event: "*", schema: "public", table: "comments", filter: `cheese_id=eq.${cheeseId}` }, fetchData)
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   }, [cheeseId]);
 
   const handleDelete = async () => {
