@@ -53,6 +53,11 @@ export default function CheesePage() {
 
     fetchData();
 
+    // Clear any pending notifications for this cheese
+    if (user?.id) {
+      supabase.from("notifications").delete().eq("user_id", user.id).eq("ref_id", cheeseId);
+    }
+
     const channel = supabase
       .channel(`cheese-${cheeseId}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "reviews", filter: `cheese_id=eq.${cheeseId}` }, fetchData)

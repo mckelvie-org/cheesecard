@@ -43,6 +43,11 @@ export default function TastingDetailPage() {
 
     fetchData();
 
+    // Clear any pending notifications for this tasting
+    if (user?.id) {
+      supabase.from("notifications").delete().eq("user_id", user.id).eq("ref_id", id);
+    }
+
     const channel = supabase
       .channel(`tasting-detail-${id}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "tastings", filter: `id=eq.${id}` }, fetchData)

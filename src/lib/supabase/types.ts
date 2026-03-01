@@ -62,6 +62,7 @@ export interface Database {
           front_image_url: string | null;
           back_image_url: string | null;
           created_at: string;
+          created_by: string | null;
         };
         Insert: {
           id?: string;
@@ -76,6 +77,7 @@ export interface Database {
           front_image_url?: string | null;
           back_image_url?: string | null;
           created_at?: string;
+          created_by?: string | null;
         };
         Update: {
           name?: string;
@@ -163,6 +165,30 @@ export interface Database {
         };
         Relationships: [];
       };
+      notifications: {
+        Row: {
+          id: string;
+          user_id: string;
+          type: string;
+          actor_id: string | null;
+          actor_name: string | null;
+          ref_id: string;
+          subject: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          type: string;
+          ref_id: string;
+          subject: string;
+          actor_id?: string | null;
+          actor_name?: string | null;
+          created_at?: string;
+        };
+        Update: Record<string, never>;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
@@ -180,3 +206,4 @@ export type Cheese = Database["public"]["Tables"]["cheeses"]["Row"];
 export type Review = Database["public"]["Tables"]["reviews"]["Row"];
 export type Comment = Database["public"]["Tables"]["comments"]["Row"];
 export type TastingPhoto = Database["public"]["Tables"]["tasting_photos"]["Row"];
+export type Notification = Database["public"]["Tables"]["notifications"]["Row"];

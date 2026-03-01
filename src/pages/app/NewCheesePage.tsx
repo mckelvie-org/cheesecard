@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -499,6 +500,7 @@ function MetadataStep({
   initialMetadata: CheeseMetadata;
   onBack: () => void;
 }) {
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [saving, setSaving] = useState(false);
   const [meta, setMeta] = useState<CheeseMetadata>(initialMetadata);
@@ -557,6 +559,7 @@ function MetadataStep({
           wine_pairings: meta.wine_pairings,
           front_image_url: frontUrl,
           back_image_url: backUrl,
+          created_by: user?.id ?? null,
         })
         .select()
         .single();
