@@ -41,10 +41,3 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# corner-detector — test images and Python virtualenv
-corner-detector/*.jpeg
-corner-detector/*.jpg
-corner-detector/*.png
-corner-detector/venv/
-corner-detector/__pycache__/
-corner-detector/*.pyc
