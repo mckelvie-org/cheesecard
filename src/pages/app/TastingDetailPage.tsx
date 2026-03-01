@@ -45,7 +45,7 @@ export default function TastingDetailPage() {
 
     // Clear any pending notifications for this tasting
     if (user?.id) {
-      supabase.from("notifications").delete().eq("user_id", user.id).eq("ref_id", id);
+      supabase.from("notifications").delete().eq("user_id", user.id).eq("ref_id", id).then(() => {});
     }
 
     const channel = supabase

@@ -55,7 +55,7 @@ export default function CheesePage() {
 
     // Clear any pending notifications for this cheese
     if (user?.id) {
-      supabase.from("notifications").delete().eq("user_id", user.id).eq("ref_id", cheeseId);
+      supabase.from("notifications").delete().eq("user_id", user.id).eq("ref_id", cheeseId).then(() => {});
     }
 
     const channel = supabase

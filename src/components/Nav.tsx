@@ -50,7 +50,7 @@ export default function Nav({ profile }: { profile: Profile }) {
           if (isSuppressed) {
             // User is already viewing this content — delete silently.
             // The resulting DELETE event will trigger fetchNotifications.
-            supabase.from("notifications").delete().eq("id", n.id);
+            supabase.from("notifications").delete().eq("id", n.id).then(() => {});
           } else {
             fetchNotifications();
           }

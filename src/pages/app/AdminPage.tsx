@@ -42,7 +42,7 @@ export default function AdminPage() {
 
     // Clear new_member notifications when admin visits this page
     if (profile?.id) {
-      supabase.from("notifications").delete().eq("user_id", profile.id).eq("type", "new_member");
+      supabase.from("notifications").delete().eq("user_id", profile.id).eq("type", "new_member").then(() => {});
     }
 
     const channel = supabase
