@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { formatDate } from "@/lib/utils";
+import { toast } from "sonner";
 import type { Tasting, Cheese } from "@/lib/supabase/types";
 
 type CheeseWithReviews = Cheese & {
@@ -15,9 +16,12 @@ type CheeseWithReviews = Cheese & {
 export default function TastingDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { user, profile } = useAuth();
+  const navigate = useNavigate();
   const [tasting, setTasting] = useState<Tasting | null>(null);
   const [cheeses, setCheeses] = useState<CheeseWithReviews[]>([]);
   const [loading, setLoading] = useState(true);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -36,6 +40,16 @@ export default function TastingDetailPage() {
     });
   }, [id]);
 
+  const handleDeleteTasting = async () => {
+    if (!id) return;
+    setDeleting(true);
+    const supabase = createClient();
+    const { error } = await supabase.from("tastings").delete().eq("id", id);
+    if (error) { toast.error("Failed to delete tasting"); setDeleting(false); return; }
+    toast.success("Tasting deleted");
+    navigate("/");
+  };
+
   if (loading) return <p className="text-center py-12 text-gray-400">Loading...</p>;
   if (!tasting) return <p className="text-center py-12 text-gray-400">Tasting not found.</p>;
 
@@ -43,12 +57,30 @@ export default function TastingDetailPage() {
     <div className="space-y-6">
       <div>
         <Link to="/" className="text-sm text-amber-700 hover:underline">← All tastings</Link>
-        <div className="flex items-center justify-between mt-2">
+        <div className="flex items-start justify-between gap-2 mt-2">
           <h1 className="text-2xl font-bold text-amber-900">{formatDate(tasting.date)}</h1>
           {profile?.role === "admin" && (
-            <Button asChild size="sm">
-              <Link to={`/tastings/${id}/cheeses/new`}>+ Add Cheese</Link>
-            </Button>
+            <div className="flex items-center gap-2 flex-wrap justify-end flex-shrink-0">
+              <Button asChild size="sm">
+                <Link to={`/tastings/${id}/cheeses/new`}>+ Add Cheese</Link>
+              </Button>
+              {!confirmDelete ? (
+                <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                  onClick={() => setConfirmDelete(true)}>
+                  Delete Tasting
+                </Button>
+              ) : (
+                <>
+                  <span className="text-xs text-red-600 whitespace-nowrap">
+                    Delete with all {cheeses.length} cheese{cheeses.length !== 1 ? "s" : ""}?
+                  </span>
+                  <Button variant="ghost" size="sm" onClick={() => setConfirmDelete(false)}>Cancel</Button>
+                  <Button variant="destructive" size="sm" onClick={handleDeleteTasting} disabled={deleting}>
+                    {deleting ? "Deleting…" : "Yes, delete"}
+                  </Button>
+                </>
+              )}
+            </div>
           )}
         </div>
         {tasting.notes && <p className="text-gray-600 mt-1">{tasting.notes}</p>}

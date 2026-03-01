@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import { Badge } from "@/components/ui/badge";
@@ -22,12 +22,15 @@ interface ProfileMini {
 
 export default function CheesePage() {
   const { cheeseId } = useParams<{ cheeseId: string }>();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
+  const navigate = useNavigate();
   const [cheese, setCheese] = useState<Cheese | null>(null);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [comments, setComments] = useState<Comment[]>([]);
   const [profileMap, setProfileMap] = useState<Record<string, ProfileMini>>({});
   const [loading, setLoading] = useState(true);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (!cheeseId) return;
@@ -45,6 +48,16 @@ export default function CheesePage() {
       setLoading(false);
     });
   }, [cheeseId]);
+
+  const handleDelete = async () => {
+    if (!cheese) return;
+    setDeleting(true);
+    const supabase = createClient();
+    const { error } = await supabase.from("cheeses").delete().eq("id", cheese.id);
+    if (error) { toast.error("Failed to delete cheese"); setDeleting(false); return; }
+    toast.success(`"${cheese.name}" deleted`);
+    navigate(`/tastings/${cheese.tasting_id}`);
+  };
 
   if (loading) return <p className="text-center py-12 text-gray-400">Loading...</p>;
   if (!cheese) return <p className="text-center py-12 text-gray-400">Cheese not found.</p>;
@@ -108,6 +121,25 @@ export default function CheesePage() {
                 ))}
               </div>
             </div>
+          )}
+        </div>
+      )}
+
+      {profile?.role === "admin" && (
+        <div className="flex justify-end items-center gap-2 flex-wrap">
+          {!confirmDelete ? (
+            <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-700 hover:bg-red-50"
+              onClick={() => setConfirmDelete(true)}>
+              Delete Cheese
+            </Button>
+          ) : (
+            <>
+              <span className="text-sm text-red-600">Delete this cheese?</span>
+              <Button variant="ghost" size="sm" onClick={() => setConfirmDelete(false)}>Cancel</Button>
+              <Button variant="destructive" size="sm" onClick={handleDelete} disabled={deleting}>
+                {deleting ? "Deleting…" : "Yes, delete"}
+              </Button>
+            </>
           )}
         </div>
       )}
