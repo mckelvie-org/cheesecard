@@ -29,7 +29,7 @@ function loadOpenCV(): Promise<void> {
       },
     };
     const script = document.createElement("script");
-    script.src = "https://docs.opencv.org/4.8.0/opencv.js";
+    script.src = "https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.10.0-release.1/dist/opencv.js";
     script.async = true;
     script.onerror = reject;
     document.head.appendChild(script);
@@ -38,7 +38,7 @@ function loadOpenCV(): Promise<void> {
   return cvLoadPromise;
 }
 
-/** Order 4 points clockwise: top-left, top-right, bottom-right, bottom-left */
+/** Order 4 points: top-left, top-right, bottom-right, bottom-left */
 function orderPoints(pts: [number, number][]): [number, number][] {
   const sorted = [...pts].sort((a, b) => a[0] + a[1] - (b[0] + b[1]));
   const tl = sorted[0];
@@ -49,11 +49,159 @@ function orderPoints(pts: [number, number][]): [number, number][] {
   return [tl, tr, br, bl];
 }
 
+/** Intersect two lines given as (vx, vy, x0, y0). Returns [x, y] or null if parallel. */
+function lineIntersection(
+  l1: [number, number, number, number],
+  l2: [number, number, number, number],
+): [number, number] | null {
+  const [vx1, vy1, x1, y1] = l1;
+  const [vx2, vy2, x2, y2] = l2;
+  const denom = vx1 * vy2 - vy1 * vx2;
+  if (Math.abs(denom) < 1e-6) return null;
+  const t = ((x2 - x1) * vy2 - (y2 - y1) * vx2) / denom;
+  return [x1 + t * vx1, y1 + t * vy1];
+}
+
 /**
- * Detect the card outline in the image and return 4 corners in original image pixels.
- * Returns null if no suitable quadrilateral is found.
+ * Fit 4 independent lines to the edges of a convex hull, then intersect
+ * adjacent pairs to get corners.
+ *
+ * Each hull edge is classified as top/bottom/left/right by its angle and
+ * whether its midpoint is above/below or left/right of the hull centroid.
+ * All points from edges in each group are collected and a line is fit by
+ * least squares (cv.fitLine).  Adjacent lines are then intersected.
+ *
+ * This is superior to minAreaRect because each side finds its own best-fit
+ * direction independently — the result is a general quadrilateral rather
+ * than a forced rectangle.
  */
-export async function detectCardCorners(file: File): Promise<[number, number][] | null> {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function quadFromHullLines(hull: any, cv: any): [number, number][] | null {
+  const n = hull.rows;
+  console.log(`[quad] hull rows=${n} cols=${hull.cols} type=${hull.type()} channels=${hull.channels()} data32S.len=${hull.data32S?.length}`);
+  if (n < 4) return null;
+
+  // Log first few hull points to verify data layout (type should be CV_32SC2 = 12)
+  const pts0 = hull.data32S;
+  if (pts0 && n >= 2) {
+    console.log(`[quad] hull[0]=(${pts0[0]},${pts0[1]}) hull[1]=(${pts0[2]},${pts0[3]})`);
+  }
+
+  // Hull centroid
+  let cx = 0, cy = 0;
+  for (let i = 0; i < n; i++) {
+    cx += hull.data32S[i * 2];
+    cy += hull.data32S[i * 2 + 1];
+  }
+  cx /= n; cy /= n;
+  console.log(`[quad] centroid=(${Math.round(cx)},${Math.round(cy)})`);
+
+  // Collect edge-endpoint coordinates into 4 directional groups
+  const groups: Record<string, number[]> = { top: [], bottom: [], left: [], right: [] };
+  for (let i = 0; i < n; i++) {
+    const x1 = hull.data32S[i * 2];
+    const y1 = hull.data32S[i * 2 + 1];
+    const x2 = hull.data32S[((i + 1) % n) * 2];
+    const y2 = hull.data32S[((i + 1) % n) * 2 + 1];
+    const angle = Math.abs(Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI);
+    const midX = (x1 + x2) / 2;
+    const midY = (y1 + y2) / 2;
+    const isH = angle < 45 || angle > 135;
+    const key = isH
+      ? (midY < cy ? "top" : "bottom")
+      : (midX < cx ? "left" : "right");
+    groups[key].push(x1, y1, x2, y2);
+  }
+  console.log(`[quad] groups: top=${groups.top.length/4} bottom=${groups.bottom.length/4} left=${groups.left.length/4} right=${groups.right.length/4} edges`);
+
+  // Fit one line per group using least squares
+  const lines: Record<string, [number, number, number, number]> = {};
+  for (const [name, pts] of Object.entries(groups)) {
+    if (pts.length < 4) {
+      console.warn(`[quad] group '${name}' is empty — hull too sparse`);
+      return null;  // group empty — hull too sparse
+    }
+    const mat = cv.matFromArray(pts.length / 2, 1, cv.CV_32FC2, pts);
+    const lineMat = new cv.Mat();
+    cv.fitLine(mat, lineMat, cv.DIST_L2, 0, 0.01, 0.01);
+    lines[name] = [
+      lineMat.data32F[0], lineMat.data32F[1],
+      lineMat.data32F[2], lineMat.data32F[3],
+    ];
+    mat.delete();
+    lineMat.delete();
+  }
+
+  const tl = lineIntersection(lines.top,    lines.left);
+  const tr = lineIntersection(lines.top,    lines.right);
+  const br = lineIntersection(lines.bottom, lines.right);
+  const bl = lineIntersection(lines.bottom, lines.left);
+  if (!tl || !tr || !br || !bl) return null;
+  return [tl, tr, br, bl];
+}
+
+/** Validate corners in proc-space.  Returns ordered [TL,TR,BR,BL] or null. */
+function validateCorners(
+  corners: [number, number][],
+  procW: number,
+  procH: number,
+): [number, number][] | null {
+  const ordered = orderPoints(corners);
+  const [tl, tr, br, bl] = ordered;
+
+  // Quad area via shoelace
+  const poly = [tl, tr, br, bl];
+  let area = 0;
+  for (let i = 0; i < 4; i++) {
+    const j = (i + 1) % 4;
+    area += poly[i][0] * poly[j][1] - poly[j][0] * poly[i][1];
+  }
+  const areaFrac = Math.abs(area) / 2 / (procW * procH);
+  if (areaFrac > 0.97) return null;  // spans full image — background contamination
+
+  // Edge-margin check (skip when card fills most of the frame)
+  if (areaFrac < 0.65) {
+    const margin = Math.max(5, Math.round(Math.min(procW, procH) * 0.03));
+    for (const [x, y] of ordered) {
+      if (x < margin || y < margin || x > procW - margin || y > procH - margin) {
+        return null;
+      }
+    }
+  }
+
+  // Aspect ratio: portrait 0.35–0.90, landscape 1.1–2.9
+  const topW = Math.hypot(tr[0] - tl[0], tr[1] - tl[1]);
+  const botW = Math.hypot(br[0] - bl[0], br[1] - bl[1]);
+  const lefH = Math.hypot(bl[0] - tl[0], bl[1] - tl[1]);
+  const rigH = Math.hypot(br[0] - tr[0], br[1] - tr[1]);
+  const ratio = (topW + botW) / (lefH + rigH);
+  if (!((ratio >= 0.35 && ratio <= 0.90) || (ratio >= 1.1 && ratio <= 2.9))) return null;
+
+  return ordered;
+}
+
+export interface CardDetectionResult {
+  /** 4 corners [TL, TR, BR, BL] in original image pixels */
+  corners: [number, number][];
+  /** Convex hull points in original image pixels (for visualisation) */
+  hull: [number, number][];
+}
+
+/**
+ * Detect card corners using marker-based watershed.
+ *
+ * Seeds the image with two labels before running watershed:
+ *   - Label 2 (background): outer 5% border — guaranteed outside the card.
+ *   - Label 1 (card): largest 7:4 (h:w) rectangle fitting within 60% of
+ *     each axis, centred in the image — guaranteed inside the card based
+ *     on the prior that card edges are within 20% of the image edges.
+ *
+ * After watershed the card region (label 1) is extracted as a mask,
+ * its largest contour is taken, the convex hull computed, and 4 independent
+ * lines are fit to the hull edges (top/bottom/left/right) then intersected
+ * to give corners.  This avoids minAreaRect's forced-rectangle constraint.
+ */
+export async function detectCardCorners(file: File): Promise<CardDetectionResult | null> {
   await loadOpenCV();
   const cv = window.cv;
 
@@ -62,10 +210,6 @@ export async function detectCardCorners(file: File): Promise<[number, number][] 
     img.onload = () => {
       const origW = img.naturalWidth;
       const origH = img.naturalHeight;
-
-      // Scale down so the longest side is at most 800px.
-      // Using longest dimension (not just width) avoids tall proc images
-      // for portrait phone photos that would otherwise exceed 1000px height.
       const scale = Math.min(1, 800 / Math.max(origW, origH));
       const procW = Math.round(origW * scale);
       const procH = Math.round(origH * scale);
@@ -73,117 +217,148 @@ export async function detectCardCorners(file: File): Promise<[number, number][] 
       const canvas = document.createElement("canvas");
       canvas.width = procW;
       canvas.height = procH;
-      const ctx = canvas.getContext("2d")!;
-      ctx.drawImage(img, 0, 0, procW, procH);
+      canvas.getContext("2d")!.drawImage(img, 0, 0, procW, procH);
 
-      const src = cv.imread(canvas);
-      const gray = new cv.Mat();
-      const blurred = new cv.Mat();
-      const edges = new cv.Mat();
-      const closed = new cv.Mat();
-      const contours = new cv.MatVector();
-      const hierarchy = new cv.Mat();
-      // 5×5 kernel gives more gap-closing for rounded card corners
-      const kernel = cv.Mat.ones(5, 5, cv.CV_8U);
+      // All OpenCV objects collected here for cleanup in finally
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const toDelete: any[] = [];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const mat = <T>(m: T): T => { toDelete.push(m); return m; };
 
       try {
+        const src      = mat(cv.imread(canvas));
+        const gray     = mat(new cv.Mat());
+        const blurred  = mat(new cv.Mat());
+        const enhanced = mat(new cv.Mat());
+        const imgBGR   = mat(new cv.Mat());
+        const markers  = mat(new cv.Mat(procH, procW, cv.CV_32SC1, new cv.Scalar(0)));
+        const cardMask = mat(new cv.Mat(procH, procW, cv.CV_8UC1,  new cv.Scalar(0)));
+        const contours = mat(new cv.MatVector());
+        const hierarchy = mat(new cv.Mat());
+        // ── Preprocess ──────────────────────────────────────────────────────
         cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
         cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
 
-        // Auto-Canny: mean ≈ median for typical images; derive thresholds
-        const mean = cv.mean(blurred)[0];
-        const high = Math.min(255, Math.max(80, mean * 1.33));
-        const low = high * 0.5;
-        cv.Canny(blurred, edges, low, high);
-
-        // Morphological close (dilate then erode) seals gaps at rounded corners
-        // better than dilate alone — keeps edge positions accurate after closing.
-        cv.morphologyEx(edges, closed, cv.MORPH_CLOSE, kernel);
-
-        // RETR_EXTERNAL: only outermost contours — prevents internal card
-        // features (e.g. the photo square on the front face) from matching
-        cv.findContours(closed, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
-
-        const imageArea = procW * procH;
-        // Boundary margin: reject quads whose corners touch the image edges
-        const margin = Math.round(procW * 0.05);
-
-        // Collect large contours that don't touch the image boundary,
-        // sorted largest-first. We try the top 3 in case the largest
-        // is a false positive (e.g. a shadow outline).
-        const candidates: Array<{ area: number; contour: ReturnType<typeof cv.Mat> }> = [];
-        for (let i = 0; i < contours.size(); i++) {
-          const contour = contours.get(i);
-          const area = cv.contourArea(contour);
-          if (area < imageArea * 0.10) continue;
-          const br = cv.boundingRect(contour);
-          const touchesBoundary =
-            br.x < margin || br.y < margin ||
-            br.x + br.width > procW - margin ||
-            br.y + br.height > procH - margin;
-          if (!touchesBoundary) candidates.push({ area, contour });
-        }
-        candidates.sort((a, b) => b.area - a.area);
-
-        let result: [number, number][] | null = null;
-        for (const { contour } of candidates.slice(0, 3)) {
-          // convexHull straightens the rounded-corner arcs in the contour
-          // so that approxPolyDP reliably collapses to exactly 4 vertices.
-          const hull = new cv.Mat();
-          cv.convexHull(contour, hull);
-
-          const perimeter = cv.arcLength(hull, true);
-
-          // Search for an epsilon that gives exactly 4 sides.
-          // Start tight (0.01, matching the Python playing-card detector);
-          // convexHull already smooths rounded-corner arcs so the hull
-          // approximates a rectangle well at low epsilon.
-          for (const epsFactor of [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.08, 0.10]) {
-            const approx = new cv.Mat();
-            cv.approxPolyDP(hull, approx, epsFactor * perimeter, true);
-
-            if (approx.rows === 4 && cv.isContourConvex(approx)) {
-              const pts: [number, number][] = [];
-              for (let i = 0; i < 4; i++) {
-                pts.push([
-                  Math.round(approx.data32S[i * 2] / scale),
-                  Math.round(approx.data32S[i * 2 + 1] / scale),
-                ]);
-              }
-              approx.delete();
-
-              // Validate aspect ratio against the known card dimensions (4:7 = 0.571).
-              // Average opposite edge lengths to approximate the perspective-corrected
-              // size. Tolerance covers up to ~45° tilt toward/away from camera.
-              const ordered = orderPoints(pts);
-              const topW  = Math.hypot(ordered[1][0] - ordered[0][0], ordered[1][1] - ordered[0][1]);
-              const botW  = Math.hypot(ordered[2][0] - ordered[3][0], ordered[2][1] - ordered[3][1]);
-              const lefH  = Math.hypot(ordered[3][0] - ordered[0][0], ordered[3][1] - ordered[0][1]);
-              const rigH  = Math.hypot(ordered[2][0] - ordered[1][0], ordered[2][1] - ordered[1][1]);
-              const ratio = (topW + botW) / (lefH + rigH);
-
-              if (ratio >= 0.35 && ratio <= 0.90) {
-                result = ordered;
-              }
-            } else {
-              approx.delete();
-            }
-            if (result) break;
+        // CLAHE enhances dark-on-dark edges (e.g. black panel on dark fabric).
+        // OpenCV.js exposes CLAHE via the cv.createCLAHE factory function.
+        // Fall back to plain blur if unavailable.
+        try {
+          const clahe = cv.createCLAHE(2.0, new cv.Size(8, 8));
+          clahe.apply(blurred, enhanced);
+          clahe.delete();
+          console.log("[corners] CLAHE applied via cv.createCLAHE");
+        } catch (e1) {
+          console.warn("[corners] cv.createCLAHE failed:", e1);
+          // Some builds expose it as a constructor — try that
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const clahe2: any = new cv.CLAHE(2.0, new cv.Size(8, 8));
+            clahe2.apply(blurred, enhanced);
+            clahe2.delete();
+            console.log("[corners] CLAHE applied via new cv.CLAHE");
+          } catch (e2) {
+            console.warn("[corners] CLAHE unavailable — using plain blur:", e2);
+            blurred.copyTo(enhanced);
           }
-
-          hull.delete();
-          if (result) break;
         }
 
-        resolve(result);
-      } catch {
+        // Watershed needs a 3-channel image
+        cv.cvtColor(enhanced, imgBGR, cv.COLOR_GRAY2BGR);
+
+        // ── Seed markers ────────────────────────────────────────────────────
+        const mData  = markers.data32S;
+        const border = Math.max(3, Math.round(Math.min(procW, procH) * 0.05));
+
+        // Background: fill top/bottom rows, then left/right columns
+        for (let y = 0; y < border; y++) {
+          mData.fill(2,  y            * procW,  y            * procW + procW);
+          mData.fill(2, (procH-1-y)   * procW, (procH-1-y)   * procW + procW);
+        }
+        for (let y = border; y < procH - border; y++) {
+          for (let x = 0; x < border; x++) {
+            mData[y * procW + x]              = 2;
+            mData[y * procW + procW - 1 - x] = 2;
+          }
+        }
+
+        // Card interior: largest 7:4 (h:w) rect fitting within 60% of each axis.
+        // Prior: card edges are within 20% of image edges → inner 60% is card.
+        const cardHW = procH >= procW ? 7 / 4 : 4 / 7;
+        const seedW  = Math.round(Math.min(0.60 * procW, 0.60 * procH / cardHW));
+        const seedH  = Math.round(seedW * cardHW);
+        const seedX0 = Math.floor((procW - seedW) / 2);
+        const seedY0 = Math.floor((procH - seedH) / 2);
+        console.log(`[corners] proc=${procW}×${procH} seed=${seedW}×${seedH} at (${seedX0},${seedY0})`);
+        for (let y = seedY0; y < seedY0 + seedH; y++) {
+          mData.fill(1, y * procW + seedX0, y * procW + seedX0 + seedW);
+        }
+
+        // ── Watershed ───────────────────────────────────────────────────────
+        cv.watershed(imgBGR, markers);
+
+        // Extract card mask (label == 1)
+        const mOut = markers.data32S;
+        const mask = cardMask.data;
+        let cardPx = 0;
+        for (let i = 0; i < procH * procW; i++) {
+          mask[i] = mOut[i] === 1 ? 255 : 0;
+          if (mOut[i] === 1) cardPx++;
+        }
+        console.log(`[corners] card region = ${(100 * cardPx / (procW * procH)).toFixed(1)}%`);
+
+        // ── Contour → convex hull → 4-line fit ──────────────────────────────
+        cv.findContours(cardMask, contours, hierarchy,
+          cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+        console.log(`[corners] contours found: ${contours.size()}`);
+        if (contours.size() === 0) { resolve(null); return; }
+
+        let best = contours.get(0);
+        let bestArea = cv.contourArea(best);
+        for (let i = 1; i < contours.size(); i++) {
+          const c = contours.get(i);
+          const a = cv.contourArea(c);
+          if (a > bestArea) { bestArea = a; best = c; }
+        }
+        console.log(`[corners] best contour area = ${(100 * bestArea / (procW * procH)).toFixed(1)}%`);
+
+        const hull = mat(new cv.Mat());
+        cv.convexHull(best, hull, false, true);  // clockwise=false, returnPoints=true
+        console.log(`[corners] hull points: ${hull.rows}, type: ${hull.type()}, channels: ${hull.channels()}`);
+
+        // Extract hull points now (before they're deleted in finally)
+        const hullOrig: [number, number][] = [];
+        for (let i = 0; i < hull.rows; i++) {
+          hullOrig.push([
+            Math.round(hull.data32S[i * 2] / scale),
+            Math.round(hull.data32S[i * 2 + 1] / scale),
+          ]);
+        }
+
+        const quad = quadFromHullLines(hull, cv);
+        if (!quad) {
+          console.warn("[corners] quadFromHullLines failed");
+          resolve(null); return;
+        }
+        console.log("[corners] quad (proc):", quad.map(([x,y]) => `(${Math.round(x)},${Math.round(y)})`).join(" "));
+
+        const validated = validateCorners(quad, procW, procH);
+        if (!validated) {
+          console.warn("[corners] validateCorners failed");
+          resolve(null); return;
+        }
+
+        const corners = validated.map(([x, y]) => [
+          Math.round(x / scale),
+          Math.round(y / scale),
+        ]) as [number, number][];
+        console.log("[corners] result (orig):", corners.map(([x,y]) => `(${x},${y})`).join(" "));
+        resolve({ corners, hull: hullOrig });
+
+      } catch (err) {
+        console.error("[corners] exception:", err);
         resolve(null);
       } finally {
-        // contours and hierarchy are deleted here; individual contour Mats
-        // inside the MatVector are owned by it and must not be deleted separately
-        [src, gray, blurred, edges, closed, contours, hierarchy, kernel].forEach((m) => {
-          try { m.delete(); } catch { /* ignore */ }
-        });
+        toDelete.forEach(m => { try { m.delete(); } catch { /* ignore */ } });
       }
     };
     img.onerror = () => resolve(null);

@@ -9,6 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { applyPerspective, detectCardCorners } from "@/lib/opencv";
+import type { CardDetectionResult } from "@/lib/opencv";
 
 interface CheeseMetadata {
   name: string;
@@ -228,6 +229,7 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
   const [loupeVisible, setLoupeVisible] = useState(false);
   const [detecting, setDetecting] = useState(true);
   const [applying, setApplying] = useState(false);
+  const [hullDisplay, setHullDisplay] = useState<[number, number][] | null>(null);
 
   const handleImgLoad = useCallback(() => {
     const img = imgRef.current;
@@ -241,13 +243,14 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
     cornersRef.current = inset;
     setCorners(inset);
 
-    detectCardCorners(imageFile).then((detected) => {
-      if (detected && imgRef.current) {
+    detectCardCorners(imageFile).then((result: CardDetectionResult | null) => {
+      if (result && imgRef.current) {
         const scaleX = imgRef.current.clientWidth / imgRef.current.naturalWidth;
         const scaleY = imgRef.current.clientHeight / imgRef.current.naturalHeight;
-        const mapped = detected.map(([x, y]) => [x * scaleX, y * scaleY] as [number, number]);
+        const mapped = result.corners.map(([x, y]) => [x * scaleX, y * scaleY] as [number, number]);
         cornersRef.current = mapped;
         setCorners(mapped);
+        setHullDisplay(result.hull.map(([x, y]) => [x * scaleX, y * scaleY]));
       }
       setDetecting(false);
     });
@@ -427,6 +430,17 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
             >
               {/* Darken outside the selected quad */}
               <path d={dimPath} fill="rgba(0,0,0,0.45)" fillRule="evenodd" />
+              {/* Convex hull from detection — shows what watershed found */}
+              {hullDisplay && (
+                <polygon
+                  points={hullDisplay.map(([x, y]) => `${x},${y}`).join(" ")}
+                  fill="none"
+                  stroke="#4ade80"
+                  strokeWidth="1.5"
+                  strokeDasharray="6 4"
+                  opacity="0.8"
+                />
+              )}
               {/* Quad outline */}
               <polygon
                 points={corners.map(([x, y]) => `${x},${y}`).join(" ")}
