@@ -31,6 +31,7 @@ export default function CheesePage() {
   const [loading, setLoading] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [showBack, setShowBack] = useState(false);
 
   useEffect(() => {
     if (!cheeseId) return;
@@ -71,30 +72,36 @@ export default function CheesePage() {
         ← Back to tasting
       </Link>
 
-      {(cheese.front_image_url || cheese.back_image_url) && (
-        <div className="flex gap-3">
-          {cheese.front_image_url && (
-            <div className="flex-1 rounded-xl overflow-hidden bg-amber-100 aspect-[4/7]">
-              <img src={cheese.front_image_url} alt={`${cheese.name} front`} className="w-full h-full object-contain" />
-            </div>
+      <div className="flex gap-3 items-start">
+        {cheese.front_image_url && (
+          <div className="flex-1 rounded-xl overflow-hidden bg-amber-100 aspect-[4/7]">
+            <img src={cheese.front_image_url} alt={`${cheese.name} front`} className="w-full h-full object-contain" />
+          </div>
+        )}
+        <div className="flex-1 space-y-2 pt-1">
+          <h1 className="text-xl font-bold text-amber-900 leading-tight">{cheese.name}</h1>
+          <p className="text-gray-500 text-sm">
+            {[cheese.region, cheese.country].filter(Boolean).join(", ")}
+          </p>
+          {cheese.milk_type && (
+            <Badge variant="outline" className="text-xs">{cheese.milk_type} milk</Badge>
           )}
           {cheese.back_image_url && (
-            <div className="flex-1 rounded-xl overflow-hidden bg-amber-100 aspect-[4/7]">
-              <img src={cheese.back_image_url} alt={`${cheese.name} back`} className="w-full h-full object-contain" />
-            </div>
+            <button
+              onClick={() => setShowBack((v) => !v)}
+              className="block text-xs text-amber-700 hover:underline mt-1"
+            >
+              {showBack ? "Hide back of card" : "View back of card"}
+            </button>
           )}
         </div>
-      )}
-
-      <div>
-        <h1 className="text-2xl font-bold text-amber-900">{cheese.name}</h1>
-        <p className="text-gray-500 mt-0.5">
-          {[cheese.region, cheese.country].filter(Boolean).join(", ")}
-        </p>
-        {cheese.milk_type && (
-          <Badge variant="outline" className="mt-2">{cheese.milk_type} milk</Badge>
-        )}
       </div>
+
+      {showBack && cheese.back_image_url && (
+        <div className="w-1/2 rounded-xl overflow-hidden bg-amber-100 aspect-[4/7]">
+          <img src={cheese.back_image_url} alt={`${cheese.name} back`} className="w-full h-full object-contain" />
+        </div>
+      )}
 
       {cheese.description && (
         <p className="text-gray-700 text-sm leading-relaxed">{cheese.description}</p>
