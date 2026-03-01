@@ -57,7 +57,7 @@ export default function CheesePage() {
       .channel(`cheese-${cheeseId}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "reviews", filter: `cheese_id=eq.${cheeseId}` }, fetchData)
       .on("postgres_changes", { event: "*", schema: "public", table: "comments", filter: `cheese_id=eq.${cheeseId}` }, fetchData)
-      .subscribe();
+      .subscribe((status, err) => console.log(`[realtime] cheese-${cheeseId}:`, status, err ?? ""));
 
     return () => { supabase.removeChannel(channel); };
   }, [cheeseId]);
