@@ -38,7 +38,7 @@ export default function TastingsPage() {
       .channel("tastings-page")
       .on("postgres_changes", { event: "*", schema: "public", table: "tastings" }, fetchTastings)
       .on("postgres_changes", { event: "*", schema: "public", table: "cheeses" }, fetchTastings)
-      .subscribe((status, err) => console.log("[realtime] tastings-page:", status, err ?? ""));
+      .subscribe();
 
     return () => { supabase.removeChannel(channel); };
   }, []);

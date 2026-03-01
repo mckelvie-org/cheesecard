@@ -55,9 +55,9 @@ export default function CheesePage() {
 
     const channel = supabase
       .channel(`cheese-${cheeseId}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "reviews" }, (payload) => { console.log("[realtime] review event:", payload); fetchData(); })
-      .on("postgres_changes", { event: "*", schema: "public", table: "comments" }, (payload) => { console.log("[realtime] comment event:", payload); fetchData(); })
-      .subscribe((status, err) => console.log(`[realtime] cheese-${cheeseId}:`, status, err ?? ""));
+      .on("postgres_changes", { event: "*", schema: "public", table: "reviews", filter: `cheese_id=eq.${cheeseId}` }, fetchData)
+      .on("postgres_changes", { event: "*", schema: "public", table: "comments", filter: `cheese_id=eq.${cheeseId}` }, fetchData)
+      .subscribe();
 
     return () => { supabase.removeChannel(channel); };
   }, [cheeseId]);
@@ -351,6 +351,7 @@ function DiscussionSection({ cheeseId, userId, initialComments, profileMap }: {
 }) {
   const supabase = createClient();
   const [comments, setComments] = useState<Comment[]>(initialComments);
+  useEffect(() => { setComments(initialComments); }, [initialComments]);
   const [newBody, setNewBody] = useState("");
   const [posting, setPosting] = useState(false);
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
