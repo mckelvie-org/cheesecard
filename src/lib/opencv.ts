@@ -202,12 +202,15 @@ export interface CardDetectionResult {
  * to give corners.  This avoids minAreaRect's forced-rectangle constraint.
  */
 export async function detectCardCorners(file: File): Promise<CardDetectionResult | null> {
+  console.log("[corners] detectCardCorners: loading OpenCV...");
   await loadOpenCV();
+  console.log("[corners] OpenCV ready, starting detection");
   const cv = window.cv;
 
   return new Promise((resolve) => {
     const img = new Image();
     img.onload = () => {
+      console.log(`[corners] img.onload fired: ${img.naturalWidth}×${img.naturalHeight}`);
       const origW = img.naturalWidth;
       const origH = img.naturalHeight;
       const scale = Math.min(1, 800 / Math.max(origW, origH));

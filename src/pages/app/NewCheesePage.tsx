@@ -253,6 +253,9 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
         setHullDisplay(result.hull.map(([x, y]) => [x * scaleX, y * scaleY]));
       }
       setDetecting(false);
+    }).catch((err) => {
+      console.error("[corners] detectCardCorners rejected:", err);
+      setDetecting(false);
     });
   }, [imageFile]);
 
