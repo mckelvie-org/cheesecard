@@ -17,22 +17,50 @@ declare global {
 let cvReady = false;
 let cvLoadPromise: Promise<void> | null = null;
 
+const OPENCV_URL = "https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.10.0-release.1/dist/opencv.js";
+
 function loadOpenCV(): Promise<void> {
   if (cvReady) return Promise.resolve();
   if (cvLoadPromise) return cvLoadPromise;
 
   cvLoadPromise = new Promise((resolve, reject) => {
-    window.Module = {
-      onRuntimeInitialized: () => {
-        cvReady = true;
-        resolve();
-      },
+    const onReady = () => {
+      if (cvReady) return;  // guard against double-fire
+      cvReady = true;
+      clearInterval(poll);
+      resolve();
     };
-    const script = document.createElement("script");
-    script.src = "https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.10.0-release.1/dist/opencv.js";
-    script.async = true;
-    script.onerror = reject;
-    document.head.appendChild(script);
+
+    // Polling fallback: some builds don't call window.Module.onRuntimeInitialized
+    // (e.g. script already in DOM from a previous render, or @techstark init quirk).
+    const poll = setInterval(() => {
+      if (window.cv?.Mat) onReady();
+    }, 100);
+
+    // Standard OpenCV.js init callback
+    window.Module = { onRuntimeInitialized: onReady };
+
+    // Only inject the script if not already present in the DOM
+    const existing = document.querySelector(`script[src="${OPENCV_URL}"]`);
+    if (existing) {
+      // Script was already added — it may already have initialized window.cv
+      // (poll above will catch it) or will fire onRuntimeInitialized shortly.
+      console.log("[opencv] script already in DOM, waiting for cv.Mat...");
+    } else {
+      const script = document.createElement("script");
+      script.src = OPENCV_URL;
+      script.async = true;
+      script.onerror = (e) => { clearInterval(poll); reject(e); };
+      document.head.appendChild(script);
+    }
+
+    // 30-second timeout so we never hang forever
+    setTimeout(() => {
+      if (!cvReady) {
+        clearInterval(poll);
+        reject(new Error("OpenCV.js failed to initialize within 30s"));
+      }
+    }, 30_000);
   });
 
   return cvLoadPromise;
