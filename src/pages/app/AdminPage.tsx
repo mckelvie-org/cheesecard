@@ -23,16 +23,34 @@ export default function AdminPage() {
       navigate("/", { replace: true });
       return;
     }
-    createClient()
-      .from("profiles")
-      .select("*")
-      .order("full_name")
-      .then(({ data }) => {
-        const all = (data ?? []) as Profile[];
-        setPending(all.filter((p) => p.role === "pending"));
-        setMembers(all.filter((p) => p.role === "member" || p.role === "admin"));
-        setLoading(false);
-      });
+
+    const supabase = createClient();
+
+    const fetchData = () =>
+      supabase
+        .from("profiles")
+        .select("*")
+        .order("full_name")
+        .then(({ data }) => {
+          const all = (data ?? []) as Profile[];
+          setPending(all.filter((p) => p.role === "pending"));
+          setMembers(all.filter((p) => p.role === "member" || p.role === "admin"));
+          setLoading(false);
+        });
+
+    fetchData();
+
+    // Clear new_member notifications when admin visits this page
+    if (profile?.id) {
+      supabase.from("notifications").delete().eq("user_id", profile.id).eq("type", "new_member");
+    }
+
+    const channel = supabase
+      .channel("admin-profiles")
+      .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, fetchData)
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   }, [profile, navigate]);
 
   const updateRole = async (userId: string, role: Role) => {

@@ -44,7 +44,10 @@ export default function Nav({ profile }: { profile: Profile }) {
         { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${profile.id}` },
         (payload) => {
           const n = payload.new as Notification;
-          if (window.location.hash.includes(n.ref_id)) {
+          const hash = window.location.hash;
+          const isSuppressed = hash.includes(n.ref_id) ||
+            (n.type === "new_member" && hash.includes("/admin"));
+          if (isSuppressed) {
             // User is already viewing this content — delete silently.
             // The resulting DELETE event will trigger fetchNotifications.
             supabase.from("notifications").delete().eq("id", n.id);
@@ -70,12 +73,16 @@ export default function Nav({ profile }: { profile: Profile }) {
       case "new_cheese":  return `${actor} added ${n.subject}`;
       case "new_review":  return `${actor} reviewed ${n.subject}`;
       case "new_comment": return `${actor} commented on ${n.subject}`;
+      case "new_member":  return `${n.subject} requested to join`;
       default: return n.subject;
     }
   };
 
-  const notificationHref = (n: Notification) =>
-    n.type === "new_tasting" ? `/tastings/${n.ref_id}` : `/cheeses/${n.ref_id}`;
+  const notificationHref = (n: Notification) => {
+    if (n.type === "new_tasting") return `/tastings/${n.ref_id}`;
+    if (n.type === "new_member")  return `/admin`;
+    return `/cheeses/${n.ref_id}`;
+  };
 
   const handleMarkAllRead = async () => {
     setNotifications([]); // optimistic
