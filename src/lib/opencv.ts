@@ -106,14 +106,7 @@ function lineIntersection(
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function quadFromHullLines(hull: any, cv: any): [number, number][] | null {
   const n = hull.rows;
-  console.log(`[quad] hull rows=${n} cols=${hull.cols} type=${hull.type()} channels=${hull.channels()} data32S.len=${hull.data32S?.length}`);
   if (n < 4) return null;
-
-  // Log first few hull points to verify data layout (type should be CV_32SC2 = 12)
-  const pts0 = hull.data32S;
-  if (pts0 && n >= 2) {
-    console.log(`[quad] hull[0]=(${pts0[0]},${pts0[1]}) hull[1]=(${pts0[2]},${pts0[3]})`);
-  }
 
   // Hull centroid
   let cx = 0, cy = 0;
@@ -122,7 +115,6 @@ function quadFromHullLines(hull: any, cv: any): [number, number][] | null {
     cy += hull.data32S[i * 2 + 1];
   }
   cx /= n; cy /= n;
-  console.log(`[quad] centroid=(${Math.round(cx)},${Math.round(cy)})`);
 
   // Collect edge-endpoint coordinates into 4 directional groups
   const groups: Record<string, number[]> = { top: [], bottom: [], left: [], right: [] };
@@ -140,7 +132,6 @@ function quadFromHullLines(hull: any, cv: any): [number, number][] | null {
       : (midX < cx ? "left" : "right");
     groups[key].push(x1, y1, x2, y2);
   }
-  console.log(`[quad] groups: top=${groups.top.length/4} bottom=${groups.bottom.length/4} left=${groups.left.length/4} right=${groups.right.length/4} edges`);
 
   // Fit one line per group using least squares
   const lines: Record<string, [number, number, number, number]> = {};
@@ -230,15 +221,12 @@ export interface CardDetectionResult {
  * to give corners.  This avoids minAreaRect's forced-rectangle constraint.
  */
 export async function detectCardCorners(file: File): Promise<CardDetectionResult | null> {
-  console.log("[corners] detectCardCorners: loading OpenCV...");
   await loadOpenCV();
-  console.log("[corners] OpenCV ready, starting detection");
   const cv = window.cv;
 
   return new Promise((resolve) => {
     const img = new Image();
     img.onload = () => {
-      console.log(`[corners] img.onload fired: ${img.naturalWidth}×${img.naturalHeight}`);
       const origW = img.naturalWidth;
       const origH = img.naturalHeight;
       const scale = Math.min(1, 800 / Math.max(origW, origH));
@@ -271,24 +259,20 @@ export async function detectCardCorners(file: File): Promise<CardDetectionResult
         cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
 
         // CLAHE enhances dark-on-dark edges (e.g. black panel on dark fabric).
-        // OpenCV.js exposes CLAHE via the cv.createCLAHE factory function.
-        // Fall back to plain blur if unavailable.
+        // @techstark/opencv-js@4.10 exposes CLAHE as `new cv.CLAHE(...)`.
+        // Fall back to cv.createCLAHE (other builds) then plain blur.
         try {
-          const clahe = cv.createCLAHE(2.0, new cv.Size(8, 8));
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const clahe: any = new cv.CLAHE(2.0, new cv.Size(8, 8));
           clahe.apply(blurred, enhanced);
           clahe.delete();
-          console.log("[corners] CLAHE applied via cv.createCLAHE");
-        } catch (e1) {
-          console.warn("[corners] cv.createCLAHE failed:", e1);
-          // Some builds expose it as a constructor — try that
+        } catch {
           try {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const clahe2: any = new cv.CLAHE(2.0, new cv.Size(8, 8));
-            clahe2.apply(blurred, enhanced);
-            clahe2.delete();
-            console.log("[corners] CLAHE applied via new cv.CLAHE");
-          } catch (e2) {
-            console.warn("[corners] CLAHE unavailable — using plain blur:", e2);
+            const clahe = cv.createCLAHE(2.0, new cv.Size(8, 8));
+            clahe.apply(blurred, enhanced);
+            clahe.delete();
+          } catch {
+            console.warn("[corners] CLAHE unavailable — using plain blur");
             blurred.copyTo(enhanced);
           }
         }
@@ -319,7 +303,6 @@ export async function detectCardCorners(file: File): Promise<CardDetectionResult
         const seedH  = Math.round(seedW * cardHW);
         const seedX0 = Math.floor((procW - seedW) / 2);
         const seedY0 = Math.floor((procH - seedH) / 2);
-        console.log(`[corners] proc=${procW}×${procH} seed=${seedW}×${seedH} at (${seedX0},${seedY0})`);
         for (let y = seedY0; y < seedY0 + seedH; y++) {
           mData.fill(1, y * procW + seedX0, y * procW + seedX0 + seedW);
         }
@@ -335,12 +318,9 @@ export async function detectCardCorners(file: File): Promise<CardDetectionResult
           mask[i] = mOut[i] === 1 ? 255 : 0;
           if (mOut[i] === 1) cardPx++;
         }
-        console.log(`[corners] card region = ${(100 * cardPx / (procW * procH)).toFixed(1)}%`);
-
         // ── Contour → convex hull → 4-line fit ──────────────────────────────
         cv.findContours(cardMask, contours, hierarchy,
           cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
-        console.log(`[corners] contours found: ${contours.size()}`);
         if (contours.size() === 0) { resolve(null); return; }
 
         let best = contours.get(0);
@@ -350,11 +330,9 @@ export async function detectCardCorners(file: File): Promise<CardDetectionResult
           const a = cv.contourArea(c);
           if (a > bestArea) { bestArea = a; best = c; }
         }
-        console.log(`[corners] best contour area = ${(100 * bestArea / (procW * procH)).toFixed(1)}%`);
 
         const hull = mat(new cv.Mat());
         cv.convexHull(best, hull, false, true);  // clockwise=false, returnPoints=true
-        console.log(`[corners] hull points: ${hull.rows}, type: ${hull.type()}, channels: ${hull.channels()}`);
 
         // Extract hull points now (before they're deleted in finally)
         const hullOrig: [number, number][] = [];
@@ -366,23 +344,15 @@ export async function detectCardCorners(file: File): Promise<CardDetectionResult
         }
 
         const quad = quadFromHullLines(hull, cv);
-        if (!quad) {
-          console.warn("[corners] quadFromHullLines failed");
-          resolve(null); return;
-        }
-        console.log("[corners] quad (proc):", quad.map(([x,y]) => `(${Math.round(x)},${Math.round(y)})`).join(" "));
+        if (!quad) { resolve(null); return; }
 
         const validated = validateCorners(quad, procW, procH);
-        if (!validated) {
-          console.warn("[corners] validateCorners failed");
-          resolve(null); return;
-        }
+        if (!validated) { resolve(null); return; }
 
         const corners = validated.map(([x, y]) => [
           Math.round(x / scale),
           Math.round(y / scale),
         ]) as [number, number][];
-        console.log("[corners] result (orig):", corners.map(([x,y]) => `(${x},${y})`).join(" "));
         resolve({ corners, hull: hullOrig });
 
       } catch (err) {

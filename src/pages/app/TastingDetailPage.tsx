@@ -67,11 +67,11 @@ export default function TastingDetailPage() {
               <Card className="hover:shadow-md transition-shadow cursor-pointer border-amber-100">
                 <CardContent className="flex gap-3 py-4">
                   {cheese.front_image_url && (
-                    <div className="w-16 h-16 rounded-lg overflow-hidden flex-shrink-0 bg-amber-100">
+                    <div className="w-10 aspect-[4/7] rounded-lg overflow-hidden flex-shrink-0 bg-amber-100">
                       <img
                         src={cheese.front_image_url}
                         alt={cheese.name}
-                        className="w-full h-full object-cover"
+                        className="w-full h-full object-contain"
                       />
                     </div>
                   )}

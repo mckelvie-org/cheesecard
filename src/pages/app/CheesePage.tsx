@@ -61,13 +61,13 @@ export default function CheesePage() {
       {(cheese.front_image_url || cheese.back_image_url) && (
         <div className="flex gap-3">
           {cheese.front_image_url && (
-            <div className="flex-1 rounded-xl overflow-hidden bg-amber-100 aspect-square">
-              <img src={cheese.front_image_url} alt={`${cheese.name} front`} className="w-full h-full object-cover" />
+            <div className="flex-1 rounded-xl overflow-hidden bg-amber-100 aspect-[4/7]">
+              <img src={cheese.front_image_url} alt={`${cheese.name} front`} className="w-full h-full object-contain" />
             </div>
           )}
           {cheese.back_image_url && (
-            <div className="flex-1 rounded-xl overflow-hidden bg-amber-100 aspect-square">
-              <img src={cheese.back_image_url} alt={`${cheese.name} back`} className="w-full h-full object-cover" />
+            <div className="flex-1 rounded-xl overflow-hidden bg-amber-100 aspect-[4/7]">
+              <img src={cheese.back_image_url} alt={`${cheese.name} back`} className="w-full h-full object-contain" />
             </div>
           )}
         </div>

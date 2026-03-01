@@ -368,10 +368,6 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
         Math.max(0, Math.min(img.naturalWidth, Math.round(x * scaleX))),
         Math.max(0, Math.min(img.naturalHeight, Math.round(y * scaleY))),
       ] as [number, number]);
-      console.log(`[crop] display size: ${img.clientWidth}×${img.clientHeight}, natural: ${img.naturalWidth}×${img.naturalHeight}`);
-      console.log(`[crop] display corners (px):`, corners.map(([x,y]) => `(${Math.round(x)},${Math.round(y)})`).join(" "));
-      console.log(`[crop] image corners (px):`, imageCorners.map(([x,y]) => `(${x},${y})`).join(" "));
-      console.log(`[crop] image corners JSON:`, JSON.stringify({tl:imageCorners[0],tr:imageCorners[1],br:imageCorners[2],bl:imageCorners[3]}));
       const result = await applyPerspective(imageFile, imageCorners);
       onConfirm(result);
     } catch {
