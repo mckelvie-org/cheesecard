@@ -109,7 +109,7 @@ export default function Nav({ profile }: { profile: Profile }) {
                 )}
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-72 max-h-80 overflow-y-auto p-0">
+            <DropdownMenuContent align="end" className="w-72 max-h-80 overflow-y-auto p-0" onCloseAutoFocus={(e) => e.preventDefault()}>
               {notifications.length === 0 ? (
                 <div className="px-4 py-6 text-center text-sm text-gray-400">No notifications</div>
               ) : (
@@ -118,7 +118,7 @@ export default function Nav({ profile }: { profile: Profile }) {
                     <DropdownMenuItem
                       key={n.id}
                       className="flex flex-col items-start gap-0.5 px-4 py-3 cursor-pointer"
-                      onSelect={() => { navigate(notificationHref(n)); setTimeout(() => (document.activeElement as HTMLElement)?.blur(), 0); }}
+                      onSelect={() => navigate(notificationHref(n))}
                     >
                       <span className="text-sm text-gray-900 leading-snug">{notificationText(n)}</span>
                       <span className="text-xs text-gray-400">{timeAgo(n.created_at)}</span>
