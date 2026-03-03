@@ -48,7 +48,7 @@ jobs:
         env:
           VITE_BASE_PATH: ${{ steps.branch.outputs.base_path }}
           VITE_SUPABASE_URL: ${{ secrets[format('STAGE_{0}_SUPABASE_URL', steps.branch.outputs.upper)] }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets[format('STAGE_{0}_SUPABASE_ANON_KEY', steps.branch.outputs.upper)] }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets[format('STAGE_{0}_SUPABASE_PUBLISHABLE_KEY', steps.branch.outputs.upper)] }}
 
       - name: Prepare gh-pages content
         run: |
