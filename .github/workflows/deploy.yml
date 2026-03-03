@@ -2,26 +2,39 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [main]
+    branches:
+      - '**'
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
 concurrency:
-  group: pages
+  group: pages-${{ github.ref_name }}
   cancel-in-progress: true
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Compute branch vars
+        id: branch
+        run: |
+          BRANCH="${{ github.ref_name }}"
+          IS_MAIN=$([[ "$BRANCH" == "main" ]] && echo "true" || echo "false")
+          UPPER=$(echo "$BRANCH" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
+          SUBPATH="stage/$BRANCH"
+          if [ "$IS_MAIN" = "true" ]; then
+            BASE_PATH="/cheesecard/"
+          else
+            BASE_PATH="/cheesecard/$SUBPATH/"
+          fi
+          echo "is_main=$IS_MAIN" >> $GITHUB_OUTPUT
+          echo "upper=$UPPER" >> $GITHUB_OUTPUT
+          echo "subpath=$SUBPATH" >> $GITHUB_OUTPUT
+          echo "base_path=$BASE_PATH" >> $GITHUB_OUTPUT
 
       - uses: actions/setup-node@v4
         with:
@@ -33,14 +46,34 @@ jobs:
       - name: Build
         run: npm run build
         env:
-          VITE_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          VITE_BASE_PATH: ${{ steps.branch.outputs.base_path }}
+          VITE_SUPABASE_URL: ${{ secrets[format('SUPABASE_{0}_URL', steps.branch.outputs.upper)] }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets[format('SUPABASE_{0}_ANON_KEY', steps.branch.outputs.upper)] }}
 
-      - uses: actions/configure-pages@v4
+      - name: Prepare gh-pages content
+        run: |
+          git fetch origin gh-pages 2>/dev/null || true
+          mkdir -p /tmp/combined
+          if git rev-parse origin/gh-pages >/dev/null 2>&1; then
+            git archive origin/gh-pages | tar -x -C /tmp/combined/
+          fi
+          if [ "$IS_MAIN" = "true" ]; then
+            # Replace root, preserve stage/
+            cp -r /tmp/combined/stage dist/stage 2>/dev/null || true
+          else
+            # Replace stage/<branch>/, preserve everything else
+            SUBPATH="${{ steps.branch.outputs.subpath }}"
+            rm -rf /tmp/combined/$SUBPATH
+            mkdir -p /tmp/combined/$SUBPATH
+            cp -r dist/. /tmp/combined/$SUBPATH/
+            rm -rf dist
+            mv /tmp/combined dist
+          fi
+        env:
+          IS_MAIN: ${{ steps.branch.outputs.is_main }}
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: peaceiris/actions-gh-pages@v4
         with:
-          path: dist
-
-      - uses: actions/deploy-pages@v4
-        id: deployment
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+          force_orphan: true
