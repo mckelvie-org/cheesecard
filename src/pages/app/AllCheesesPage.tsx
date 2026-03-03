@@ -262,12 +262,12 @@ function CheeseTableRow({ row }: { row: DisplayRow }) {
           <Link to={`/cheeses/${row.id}`} className="flex-shrink-0">
             {row.front_image_url ? (
               <div className="rounded overflow-hidden bg-amber-50 border border-amber-100"
-                   style={{ width: 24, aspectRatio: "4/7" }}>
+                   style={{ width: 24, height: 42 }}>
                 <img src={row.front_image_url} alt="" className="w-full h-full object-contain" />
               </div>
             ) : (
               <div className="rounded bg-amber-50 border border-amber-100"
-                   style={{ width: 24, aspectRatio: "4/7" }} />
+                   style={{ width: 24, height: 42 }} />
             )}
           </Link>
           <Link to={`/cheeses/${row.id}`} className="font-medium text-amber-900 hover:underline text-sm">

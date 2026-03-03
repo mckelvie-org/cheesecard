@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import { Card, CardContent } from "@/components/ui/card";
@@ -16,6 +16,7 @@ interface TastingRow {
 
 export default function TastingsPage() {
   const { profile } = useAuth();
+  const navigate = useNavigate();
   const [tastings, setTastings] = useState<TastingRow[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -47,6 +48,7 @@ export default function TastingsPage() {
 
   return (
     <div className="space-y-4">
+      <button onClick={() => navigate(-1)} className="text-sm text-amber-700 hover:underline">← Back</button>
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-amber-900">Tastings</h1>
         {profile?.role === "admin" && (
