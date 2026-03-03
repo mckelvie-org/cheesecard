@@ -11,6 +11,7 @@ import NewTastingPage from "@/pages/app/NewTastingPage";
 import CheesePage from "@/pages/app/CheesePage";
 import NewCheesePage from "@/pages/app/NewCheesePage";
 import AdminPage from "@/pages/app/AdminPage";
+import AllCheesesPage from "@/pages/app/AllCheesesPage";
 import { createClient } from "@/lib/supabase/client";
 
 function LogoutPage() {
@@ -29,13 +30,14 @@ function LogoutPage() {
 export default function App() {
   return (
     <AuthProvider>
-      <HashRouter>
+      <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/logout" element={<LogoutPage />} />
           <Route path="/pending" element={<PendingPage />} />
           <Route element={<AppLayout />}>
-            <Route path="/" element={<TastingsPage />} />
+            <Route path="/" element={<AllCheesesPage />} />
+            <Route path="/tastings" element={<TastingsPage />} />
             <Route path="/tastings/new" element={<NewTastingPage />} />
             <Route path="/tastings/:id" element={<TastingDetailPage />} />
             <Route path="/tastings/:id/cheeses/new" element={<NewCheesePage />} />

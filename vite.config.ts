@@ -5,6 +5,7 @@ import path from "path";
 
 export default defineConfig({
   base: "/cheesecard/",
+  server: { port: 5173, strictPort: true },
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {

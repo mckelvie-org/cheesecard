@@ -8,6 +8,13 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { applyPerspective, detectCardCorners } from "@/lib/opencv";
 import type { CardDetectionResult } from "@/lib/opencv";
@@ -506,6 +513,8 @@ function MetadataStep({
   const [meta, setMeta] = useState<CheeseMetadata>(initialMetadata);
   const [foodInput, setFoodInput] = useState("");
   const [wineInput, setWineInput] = useState("");
+  const [duplicateMatch, setDuplicateMatch] = useState<{ id: string; name: string } | null>(null);
+  const nameInputRef = useRef<HTMLInputElement>(null);
 
   const set = (key: keyof CheeseMetadata, value: string) =>
     setMeta((m) => ({ ...m, [key]: value }));
@@ -535,6 +544,19 @@ function MetadataStep({
     setSaving(true);
     try {
       const supabase = createClient();
+
+      // Duplicate check (case-insensitive exact match)
+      const { data: existing } = await supabase
+        .from("cheeses")
+        .select("id, name")
+        .ilike("name", meta.name.trim())
+        .maybeSingle();
+      if (existing) {
+        setDuplicateMatch(existing as { id: string; name: string });
+        setSaving(false);
+        return;
+      }
+
       const uploadImage = async (file: File, prefix: string) => {
         const ext = file.name.split(".").pop() ?? "jpg";
         const path = `${tastingId}/${prefix}-${Date.now()}.${ext}`;
@@ -549,7 +571,6 @@ function MetadataStep({
       const { data, error } = await supabase
         .from("cheeses")
         .insert({
-          tasting_id: tastingId,
           name: meta.name,
           country: meta.country || null,
           region: meta.region || null,
@@ -564,8 +585,10 @@ function MetadataStep({
         .select()
         .single();
       if (error) throw error;
+      const newId = (data as { id: string }).id;
+      await supabase.from("tasting_cheeses").insert({ tasting_id: tastingId, cheese_id: newId });
       toast.success(`${meta.name} added!`);
-      navigate(`/cheeses/${(data as { id: string }).id}`);
+      navigate(`/cheeses/${newId}`, { replace: true });
     } catch (err) {
       console.error(err);
       toast.error("Failed to save cheese");
@@ -586,7 +609,7 @@ function MetadataStep({
 
       <Card className="border-amber-100">
         <CardContent className="pt-6 space-y-4">
-          <Field label="Name *" value={meta.name} onChange={(v) => set("name", v)} />
+          <Field label="Name *" value={meta.name} onChange={(v) => set("name", v)} inputRef={nameInputRef} />
           <div className="grid grid-cols-2 gap-3">
             <Field label="Country" value={meta.country} onChange={(v) => set("country", v)} />
             <Field label="Region" value={meta.region} onChange={(v) => set("region", v)} />
@@ -609,15 +632,58 @@ function MetadataStep({
           {saving ? "Saving..." : "Save Cheese"}
         </Button>
       </div>
+
+      {duplicateMatch && (
+        <Dialog open onOpenChange={(open) => { if (!open) setDuplicateMatch(null); }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Cheese already exists</DialogTitle>
+              <DialogDescription>
+                &ldquo;{duplicateMatch.name}&rdquo; is already in the database.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex flex-col gap-2 pt-2">
+              <Button
+                onClick={async () => {
+                  const supabase = createClient();
+                  await supabase
+                    .from("tasting_cheeses")
+                    .upsert(
+                      { tasting_id: tastingId, cheese_id: duplicateMatch.id },
+                      { onConflict: "tasting_id,cheese_id", ignoreDuplicates: true }
+                    );
+                  navigate(`/cheeses/${duplicateMatch.id}`, { replace: true });
+                }}
+              >
+                Use &ldquo;{duplicateMatch.name}&rdquo;
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setDuplicateMatch(null);
+                  setTimeout(() => nameInputRef.current?.focus(), 50);
+                }}
+              >
+                Rename
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }
 
-function Field({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+function Field({ label, value, onChange, inputRef }: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  inputRef?: React.RefObject<HTMLInputElement>;
+}) {
   return (
     <div className="space-y-1">
       <Label>{label}</Label>
-      <Input value={value} onChange={(e) => onChange(e.target.value)} />
+      <Input ref={inputRef} value={value} onChange={(e) => onChange(e.target.value)} />
     </div>
   );
 }

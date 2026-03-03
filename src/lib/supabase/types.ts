@@ -51,7 +51,6 @@ export interface Database {
       cheeses: {
         Row: {
           id: string;
-          tasting_id: string;
           name: string;
           country: string | null;
           region: string | null;
@@ -66,7 +65,6 @@ export interface Database {
         };
         Insert: {
           id?: string;
-          tasting_id: string;
           name: string;
           country?: string | null;
           region?: string | null;
@@ -165,6 +163,12 @@ export interface Database {
         };
         Relationships: [];
       };
+      tasting_cheeses: {
+        Row: { id: string; tasting_id: string; cheese_id: string; created_at: string; };
+        Insert: { id?: string; tasting_id: string; cheese_id: string; created_at?: string; };
+        Update: { tasting_id?: string; cheese_id?: string; };
+        Relationships: [];
+      };
       notifications: {
         Row: {
           id: string;
@@ -206,4 +210,5 @@ export type Cheese = Database["public"]["Tables"]["cheeses"]["Row"];
 export type Review = Database["public"]["Tables"]["reviews"]["Row"];
 export type Comment = Database["public"]["Tables"]["comments"]["Row"];
 export type TastingPhoto = Database["public"]["Tables"]["tasting_photos"]["Row"];
+export type TastingCheese = Database["public"]["Tables"]["tasting_cheeses"]["Row"];
 export type Notification = Database["public"]["Tables"]["notifications"]["Row"];

@@ -11,7 +11,7 @@ interface TastingRow {
   id: string;
   date: string;
   notes: string | null;
-  cheeses: { id: string }[];
+  tasting_cheeses: { cheese_id: string }[];
 }
 
 export default function TastingsPage() {
@@ -25,7 +25,7 @@ export default function TastingsPage() {
     const fetchTastings = () =>
       supabase
         .from("tastings")
-        .select("*, cheeses(id)")
+        .select("*, tasting_cheeses(cheese_id)")
         .order("date", { ascending: false })
         .then(({ data }) => {
           setTastings((data ?? []) as TastingRow[]);
@@ -37,7 +37,7 @@ export default function TastingsPage() {
     const channel = supabase
       .channel("tastings-page")
       .on("postgres_changes", { event: "*", schema: "public", table: "tastings" }, fetchTastings)
-      .on("postgres_changes", { event: "*", schema: "public", table: "cheeses" }, fetchTastings)
+      .on("postgres_changes", { event: "*", schema: "public", table: "tasting_cheeses" }, fetchTastings)
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
@@ -72,7 +72,7 @@ export default function TastingsPage() {
                   )}
                 </div>
                 <Badge variant="secondary" className="bg-amber-100 text-amber-800">
-                  {tasting.cheeses.length} cheese{tasting.cheeses.length !== 1 ? "s" : ""}
+                  {tasting.tasting_cheeses.length} cheese{tasting.tasting_cheeses.length !== 1 ? "s" : ""}
                 </Badge>
               </CardContent>
             </Card>

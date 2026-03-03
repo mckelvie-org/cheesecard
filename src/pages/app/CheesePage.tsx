@@ -10,12 +10,46 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { toast } from "sonner";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { formatDate } from "@/lib/utils";
 import type { Cheese, Review, Comment } from "@/lib/supabase/types";
 
 interface ProfileMini {
   id: string;
   full_name: string | null;
   avatar_url: string | null;
+}
+
+interface TastingLink { tasting_id: string; date: string; }
+
+function CheeseTastingDates({ tastings }: { tastings: TastingLink[] }) {
+  const first = tastings[0];
+  const extra = tastings.slice(1);
+  return (
+    <div className="flex items-center gap-1 flex-wrap text-xs text-gray-500">
+      <span className="font-medium">Tasted:</span>
+      <Link to={`/tastings/${first.tasting_id}`} className="text-amber-700 hover:underline">
+        {formatDate(first.date)}
+      </Link>
+      {extra.length > 0 && (
+        <Popover>
+          <PopoverTrigger asChild>
+            <button className="text-gray-400 hover:text-amber-700">+{extra.length} more</button>
+          </PopoverTrigger>
+          <PopoverContent className="w-40 p-2" align="start">
+            <div className="flex flex-col gap-1">
+              {tastings.map((t) => (
+                <Link key={t.tasting_id} to={`/tastings/${t.tasting_id}`}
+                      className="text-amber-700 hover:underline text-xs whitespace-nowrap">
+                  {formatDate(t.date)}
+                </Link>
+              ))}
+            </div>
+          </PopoverContent>
+        </Popover>
+      )}
+    </div>
+  );
 }
 
 // ── Cheese page ────────────────────────────────────────────────────────────────
@@ -32,6 +66,7 @@ export default function CheesePage() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [showBack, setShowBack] = useState(false);
+  const [tastings, setTastings] = useState<TastingLink[]>([]);
 
   useEffect(() => {
     if (!cheeseId) return;
@@ -43,11 +78,17 @@ export default function CheesePage() {
         supabase.from("reviews").select("*").eq("cheese_id", cheeseId).order("created_at"),
         supabase.from("comments").select("*").eq("cheese_id", cheeseId).order("created_at"),
         supabase.from("profiles").select("id, full_name, avatar_url").in("role", ["member", "admin"]),
-      ]).then(([{ data: c }, { data: r }, { data: co }, { data: p }]) => {
+        supabase.from("tasting_cheeses").select("tasting_id, created_at, tastings(id, date)").eq("cheese_id", cheeseId).order("created_at", { ascending: false }),
+      ]).then(([{ data: c }, { data: r }, { data: co }, { data: p }, { data: tc }]) => {
         setCheese(c as Cheese | null);
         setReviews((r ?? []) as Review[]);
         setComments((co ?? []) as Comment[]);
         setProfileMap(Object.fromEntries(((p ?? []) as ProfileMini[]).map((x) => [x.id, x])));
+        const links = ((tc ?? []) as { tasting_id: string; tastings: { id: string; date: string } | null }[])
+          .filter((row) => row.tastings != null)
+          .map((row) => ({ tasting_id: row.tastings!.id, date: row.tastings!.date }))
+          .sort((a, b) => (a.date > b.date ? -1 : 1));
+        setTastings(links);
         setLoading(false);
       });
 
@@ -74,7 +115,7 @@ export default function CheesePage() {
     const { error } = await supabase.from("cheeses").delete().eq("id", cheese.id);
     if (error) { toast.error("Failed to delete cheese"); setDeleting(false); return; }
     toast.success(`"${cheese.name}" deleted`);
-    navigate(`/tastings/${cheese.tasting_id}`);
+    navigate(`/`);
   };
 
   if (loading) return <p className="text-center py-12 text-gray-400">Loading...</p>;
@@ -85,9 +126,9 @@ export default function CheesePage() {
 
   return (
     <div className="space-y-5">
-      <Link to={`/tastings/${cheese.tasting_id}`} className="text-sm text-amber-700 hover:underline">
-        ← Back to tasting
-      </Link>
+      <button onClick={() => navigate(-1)} className="text-sm text-amber-700 hover:underline">
+        ← Back
+      </button>
 
       <div className="flex gap-3 items-start">
         {cheese.front_image_url && (
@@ -103,6 +144,7 @@ export default function CheesePage() {
           {cheese.milk_type && (
             <Badge variant="outline" className="text-xs">{cheese.milk_type} milk</Badge>
           )}
+          {tastings.length > 0 && <CheeseTastingDates tastings={tastings} />}
           {cheese.back_image_url && (
             <button
               onClick={() => setShowBack((v) => !v)}
