@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: write
+  pages: read
 
 concurrency:
   group: pages-${{ github.ref_name }}
@@ -72,8 +73,17 @@ jobs:
         env:
           IS_MAIN: ${{ steps.branch.outputs.is_main }}
 
+      - name: Get custom domain
+        id: cname
+        run: |
+          CNAME=$(gh api repos/${{ github.repository }}/pages --jq '.cname // ""' 2>/dev/null || echo "")
+          echo "value=$CNAME" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./dist
           force_orphan: true
+          cname: ${{ steps.cname.outputs.value }}
