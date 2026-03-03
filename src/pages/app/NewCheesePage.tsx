@@ -678,7 +678,7 @@ function Field({ label, value, onChange, inputRef }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
-  inputRef?: React.RefObject<HTMLInputElement>;
+  inputRef?: React.RefObject<HTMLInputElement | null>;
 }) {
   return (
     <div className="space-y-1">
