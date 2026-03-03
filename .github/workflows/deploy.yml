@@ -20,22 +20,38 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Compute branch vars
-        id: branch
+      - name: Compute deploy vars
+        id: vars
         run: |
           BRANCH="${{ github.ref_name }}"
           IS_MAIN=$([[ "$BRANCH" == "main" ]] && echo "true" || echo "false")
           UPPER=$(echo "$BRANCH" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
           SUBPATH="stage/$BRANCH"
-          if [ "$IS_MAIN" = "true" ]; then
-            BASE_PATH="/cheesecard/"
+          REPO_NAME="${GITHUB_REPOSITORY##*/}"
+
+          CNAME=$(gh api repos/${{ github.repository }}/pages --jq '.cname // ""' 2>/dev/null || echo "")
+
+          if [ -n "$CNAME" ]; then
+            if [ "$IS_MAIN" = "true" ]; then
+              BASE_PATH="/"
+            else
+              BASE_PATH="/$SUBPATH/"
+            fi
           else
-            BASE_PATH="/cheesecard/$SUBPATH/"
+            if [ "$IS_MAIN" = "true" ]; then
+              BASE_PATH="/$REPO_NAME/"
+            else
+              BASE_PATH="/$REPO_NAME/$SUBPATH/"
+            fi
           fi
+
           echo "is_main=$IS_MAIN" >> $GITHUB_OUTPUT
           echo "upper=$UPPER" >> $GITHUB_OUTPUT
           echo "subpath=$SUBPATH" >> $GITHUB_OUTPUT
           echo "base_path=$BASE_PATH" >> $GITHUB_OUTPUT
+          echo "cname=$CNAME" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: actions/setup-node@v4
         with:
@@ -47,9 +63,9 @@ jobs:
       - name: Build
         run: npm run build
         env:
-          VITE_BASE_PATH: ${{ steps.branch.outputs.base_path }}
-          VITE_SUPABASE_URL: ${{ secrets[format('STAGE_{0}_SUPABASE_URL', steps.branch.outputs.upper)] }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets[format('STAGE_{0}_SUPABASE_PUBLISHABLE_KEY', steps.branch.outputs.upper)] }}
+          VITE_BASE_PATH: ${{ steps.vars.outputs.base_path }}
+          VITE_SUPABASE_URL: ${{ secrets[format('STAGE_{0}_SUPABASE_URL', steps.vars.outputs.upper)] }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets[format('STAGE_{0}_SUPABASE_PUBLISHABLE_KEY', steps.vars.outputs.upper)] }}
 
       - name: Prepare gh-pages content
         run: |
@@ -63,7 +79,7 @@ jobs:
             cp -r /tmp/combined/stage dist/stage 2>/dev/null || true
           else
             # Replace stage/<branch>/, preserve everything else
-            SUBPATH="${{ steps.branch.outputs.subpath }}"
+            SUBPATH="${{ steps.vars.outputs.subpath }}"
             rm -rf /tmp/combined/$SUBPATH
             mkdir -p /tmp/combined/$SUBPATH
             cp -r dist/. /tmp/combined/$SUBPATH/
@@ -71,19 +87,11 @@ jobs:
             mv /tmp/combined dist
           fi
         env:
-          IS_MAIN: ${{ steps.branch.outputs.is_main }}
-
-      - name: Get custom domain
-        id: cname
-        run: |
-          CNAME=$(gh api repos/${{ github.repository }}/pages --jq '.cname // ""' 2>/dev/null || echo "")
-          echo "value=$CNAME" >> $GITHUB_OUTPUT
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IS_MAIN: ${{ steps.vars.outputs.is_main }}
 
       - uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./dist
           force_orphan: true
-          cname: ${{ steps.cname.outputs.value }}
+          cname: ${{ steps.vars.outputs.cname }}

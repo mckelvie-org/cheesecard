@@ -4,7 +4,7 @@ import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 
 export default defineConfig({
-  base: process.env.VITE_BASE_PATH ?? "/cheesecard/",
+  base: process.env.VITE_BASE_PATH ?? "/",
   server: { port: 5173, strictPort: true },
   plugins: [react(), tailwindcss()],
   resolve: {
