@@ -15,7 +15,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      should_deploy: ${{ steps.check.outputs.should_deploy }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check if branch is enabled for deployment
+        id: check
+        run: |
+          source config/branch-stages.env
+          BRANCH="${{ github.ref_name }}"
+          [[ " $DEPLOY_BRANCHES " =~ " $BRANCH " ]] && RESULT=true || RESULT=false
+          echo "should_deploy=$RESULT" >> $GITHUB_OUTPUT
+
   deploy:
+    needs: check
+    if: needs.check.outputs.should_deploy == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,9 +40,17 @@ jobs:
       - name: Compute deploy vars
         id: vars
         run: |
+          source config/branch-stages.env
+
           BRANCH="${{ github.ref_name }}"
-          IS_MAIN=$([[ "$BRANCH" == "main" ]] && echo "true" || echo "false")
           UPPER=$(echo "$BRANCH" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
+          STAGE_VAR="BRANCH_${UPPER}_STAGE"
+          STAGE="${!STAGE_VAR}"
+          if [ -z "$STAGE" ]; then
+            STAGE="$UPPER"
+          fi
+
+          IS_MAIN=$([[ "$STAGE" == "MAIN" ]] && echo "true" || echo "false")
           SUBPATH="stage/$BRANCH"
           REPO_NAME="${GITHUB_REPOSITORY##*/}"
 
@@ -46,7 +71,7 @@ jobs:
           fi
 
           echo "is_main=$IS_MAIN" >> $GITHUB_OUTPUT
-          echo "upper=$UPPER" >> $GITHUB_OUTPUT
+          echo "stage=$STAGE" >> $GITHUB_OUTPUT
           echo "subpath=$SUBPATH" >> $GITHUB_OUTPUT
           echo "base_path=$BASE_PATH" >> $GITHUB_OUTPUT
           echo "cname=$CNAME" >> $GITHUB_OUTPUT
@@ -64,8 +89,8 @@ jobs:
         run: npm run build
         env:
           VITE_BASE_PATH: ${{ steps.vars.outputs.base_path }}
-          VITE_SUPABASE_URL: ${{ secrets[format('STAGE_{0}_SUPABASE_URL', steps.vars.outputs.upper)] }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets[format('STAGE_{0}_SUPABASE_PUBLISHABLE_KEY', steps.vars.outputs.upper)] }}
+          VITE_SUPABASE_URL: ${{ secrets[format('STAGE_{0}_SUPABASE_URL', steps.vars.outputs.stage)] }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets[format('STAGE_{0}_SUPABASE_PUBLISHABLE_KEY', steps.vars.outputs.stage)] }}
 
       - name: Prepare gh-pages content
         run: |

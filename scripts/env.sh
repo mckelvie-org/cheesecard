@@ -7,11 +7,18 @@
 _SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 PROJECT_DIR="$(dirname "$_SCRIPT_DIR")"
 
-_ENV_FILE="$PROJECT_DIR/.env.local"
+# Source committed project config (branch-to-stage mappings, deploy branch list)
+_CONFIG_FILE="$PROJECT_DIR/config/branch-stages.env"
+if [ -f "$_CONFIG_FILE" ]; then
+  source "$_CONFIG_FILE"
+fi
 
+# Source local overrides (gitignored) — these take precedence over committed config
+_ENV_FILE="$PROJECT_DIR/.env.local"
 if [ -f "$_ENV_FILE" ]; then
   source "$_ENV_FILE"
 fi
 
 unset _SCRIPT_DIR
+unset _CONFIG_FILE
 unset _ENV_FILE
