@@ -25,8 +25,8 @@ jobs:
       - name: Check if branch is enabled for deployment
         id: check
         run: |
-          source config/branch-stages.env
           BRANCH="${{ github.ref_name }}"
+          DEPLOY_BRANCHES="${{ vars.DEPLOY_BRANCHES }}"
           [[ " $DEPLOY_BRANCHES " =~ " $BRANCH " ]] && RESULT=true || RESULT=false
           echo "should_deploy=$RESULT" >> $GITHUB_OUTPUT
 
@@ -40,8 +40,6 @@ jobs:
       - name: Compute deploy vars
         id: vars
         run: |
-          source config/branch-stages.env
-
           BRANCH="${{ github.ref_name }}"
           UPPER=$(echo "$BRANCH" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
           STAGE_VAR="BRANCH_${UPPER}_STAGE"
