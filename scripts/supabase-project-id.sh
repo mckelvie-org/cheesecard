@@ -4,17 +4,10 @@
 # Example .env.local entries:
 #   STAGE_MAIN_SUPABASE_PROJECT_ID=abcdefghijklmnop
 #   STAGE_TEST_SUPABASE_PROJECT_ID=qrstuvwxyzabcdef
-set -e
+set -eo pipefail
 
-ROOT="$(git rev-parse --show-toplevel)"
-ENV_FILE="$ROOT/.env.local"
-
-if [ ! -f "$ENV_FILE" ]; then
-  echo "Error: $ENV_FILE not found" >&2
-  exit 1
-fi
-
-source "$ENV_FILE"
+SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+source "$SCRIPT_DIR/env.sh"
 
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 UPPER=$(echo "$BRANCH" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
