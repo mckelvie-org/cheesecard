@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/auth-context";
@@ -291,7 +291,37 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
     ctx.arc(80, 80, 80, 0, Math.PI * 2);
     ctx.clip();
 
-    ctx.drawImage(img, imgX - srcHalfW, imgY - srcHalfH, srcHalfW * 2, srcHalfH * 2, 0, 0, 160, 160);
+    // Cross-hatch background — visible for areas outside image bounds
+    ctx.fillStyle = "#1e1e1e";
+    ctx.fillRect(0, 0, 160, 160);
+    ctx.save();
+    ctx.strokeStyle = "#3d3d3d";
+    ctx.lineWidth = 1.5;
+    const hatchStep = 14;
+    for (let i = -160; i < 320; i += hatchStep) {
+      ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i + 160, 160); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(i, 160); ctx.lineTo(i + 160, 0); ctx.stroke();
+    }
+    ctx.restore();
+
+    // Draw only the valid image region (clamp source rect to image bounds)
+    const srcLeft = imgX - srcHalfW;
+    const srcTop = imgY - srcHalfH;
+    const srcRight = imgX + srcHalfW;
+    const srcBot = imgY + srcHalfH;
+    const clampedLeft = Math.max(0, srcLeft);
+    const clampedTop = Math.max(0, srcTop);
+    const clampedRight = Math.min(img.naturalWidth, srcRight);
+    const clampedBot = Math.min(img.naturalHeight, srcBot);
+    if (clampedRight > clampedLeft && clampedBot > clampedTop) {
+      const totalW = srcRight - srcLeft;
+      const totalH = srcBot - srcTop;
+      const destLeft = ((clampedLeft - srcLeft) / totalW) * 160;
+      const destTop = ((clampedTop - srcTop) / totalH) * 160;
+      const destW = ((clampedRight - clampedLeft) / totalW) * 160;
+      const destH = ((clampedBot - clampedTop) / totalH) * 160;
+      ctx.drawImage(img, clampedLeft, clampedTop, clampedRight - clampedLeft, clampedBot - clampedTop, destLeft, destTop, destW, destH);
+    }
 
     // Draw edge lines toward the two adjacent corners (shows card edge direction)
     // loupe canvas px per display px: 160 / (60*2) = 160/120 ≈ 1.333
@@ -347,16 +377,14 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
     if (dragging === null || !imgSize) return;
     e.preventDefault();
     const [x, y] = getPos(e);
-    // Allow handles to go 20px outside image bounds so corner handles
-    // remain fully visible and draggable when at the image edge
-    const cx = Math.max(-20, Math.min(imgSize.w + 20, x));
-    const cy = Math.max(-20, Math.min(imgSize.h + 20, y));
+    // Clamp handles to image bounds
+    const cx = Math.max(0, Math.min(imgSize.w, x));
+    const cy = Math.max(0, Math.min(imgSize.h, y));
     // Sync ref before drawing so edge lines see the updated corner position
     const newCorners = cornersRef.current.map((c, i) => i === dragging ? [cx, cy] : c) as [number, number][];
     cornersRef.current = newCorners;
     setCorners(newCorners);
-    // Loupe samples clamped to valid image area
-    drawLoupe(Math.max(0, Math.min(imgSize.w, x)), Math.max(0, Math.min(imgSize.h, y)), dragging);
+    drawLoupe(cx, cy, dragging);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dragging, imgSize, drawLoupe]);
 
@@ -364,6 +392,19 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
     setDragging(null);
     setLoupeVisible(false);
   }, []);
+
+  // Global pointerup/cancel handler so releasing the pointer outside the
+  // container (e.g. over the Retake button) doesn't trigger unintended clicks
+  useEffect(() => {
+    if (dragging === null) return;
+    const end = () => stopDrag();
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
+    return () => {
+      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
+    };
+  }, [dragging, stopDrag]);
 
   const handleCrop = async () => {
     const img = imgRef.current;
@@ -411,7 +452,6 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
           style={{ display: "inline-block", overflow: "visible" }}
           onPointerMove={onMove}
           onPointerUp={stopDrag}
-          onPointerLeave={stopDrag}
         >
           <img
             ref={imgRef}
