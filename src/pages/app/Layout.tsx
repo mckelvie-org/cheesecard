@@ -44,7 +44,7 @@ export default function AppLayout() {
     };
     const onTouchEnd = () => {
       if (pullYRef.current >= PULL_THRESHOLD) {
-        window.location.reload();
+        window.location.href = window.location.origin + window.location.pathname + "?bust=" + Date.now();
       } else {
         pullYRef.current = 0;
         setPullDisplay(0);
