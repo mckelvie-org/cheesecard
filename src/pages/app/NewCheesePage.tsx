@@ -472,7 +472,7 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
         <div
           ref={containerRef}
           className="relative touch-none select-none"
-          style={{ display: "inline-block", overflow: "visible", maxHeight: "100%" }}
+          style={{ display: "inline-block", overflow: "visible" }}
         >
           <img
             ref={imgRef}
@@ -484,7 +484,7 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
               width: "auto",
               height: "auto",
               maxWidth: "100%",
-              maxHeight: "100%",
+              maxHeight: "calc(100svh - 290px)",
             }}
             onLoad={handleImgLoad}
           />
