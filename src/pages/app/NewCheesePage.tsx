@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/auth-context";
@@ -240,6 +240,14 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
   const [detecting, setDetecting] = useState(true);
   const [applying, setApplying] = useState(false);
   const [hullDisplay, setHullDisplay] = useState<[number, number][] | null>(null);
+
+  // Prevent Layout's pull-to-refresh (window-level touchstart) from firing while
+  // the crop UI is active — any downward drag would otherwise reload the page.
+  useEffect(() => {
+    const suppress = (e: TouchEvent) => e.stopPropagation();
+    document.addEventListener("touchstart", suppress);
+    return () => document.removeEventListener("touchstart", suppress);
+  }, []);
 
   const handleImgLoad = useCallback(() => {
     const img = imgRef.current;
