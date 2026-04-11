@@ -53,8 +53,8 @@ export default function NewCheesePage() {
 
   if (step === "photos") {
     return (
-      <div className="space-y-6">
-        <div>
+      <div className="flex flex-col flex-1 min-h-0 gap-6">
+        <div className="shrink-0">
           <Link to={`/tastings/${tastingId}`} className="text-sm text-amber-700 hover:underline">
             ← Back to tasting
           </Link>
@@ -435,7 +435,7 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
     : "";
 
   return (
-    <div className="space-y-3">
+    <div className="flex flex-col flex-1 min-h-0 gap-3">
       {/* Full-screen overlay while dragging — covers buttons so pointer release
           can't accidentally trigger Retake. Works around iOS SVG pointer-capture quirks. */}
       {dragging !== null && (
@@ -463,16 +463,16 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
         />
       </div>
 
-      <p className="text-sm text-gray-500">
+      <p className="shrink-0 text-sm text-gray-500">
         Drag corners to the card edges, then tap Crop.
       </p>
 
       {/* px-4 keeps handles away from screen edges (prevents iOS back-swipe) */}
-      <div className="w-full flex justify-center px-4">
+      <div className="flex-1 min-h-0 w-full flex justify-center items-center px-4">
         <div
           ref={containerRef}
           className="relative touch-none select-none"
-          style={{ display: "inline-block", overflow: "visible" }}
+          style={{ display: "inline-block", overflow: "visible", maxHeight: "100%" }}
         >
           <img
             ref={imgRef}
@@ -484,7 +484,7 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
               width: "auto",
               height: "auto",
               maxWidth: "100%",
-              maxHeight: "calc(100svh - 200px)",
+              maxHeight: "100%",
             }}
             onLoad={handleImgLoad}
           />
@@ -546,7 +546,7 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
         </div>
       </div>
 
-      <div className="flex gap-2">
+      <div className="shrink-0 flex gap-2">
         <Button variant="outline" onClick={onRetake} disabled={applying}>
           ↩ Retake
         </Button>
