@@ -20,7 +20,7 @@ jobs:
     outputs:
       should_deploy: ${{ steps.check.outputs.should_deploy }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Check if branch is enabled for deployment
         id: check
@@ -35,7 +35,7 @@ jobs:
     if: needs.check.outputs.should_deploy == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Compute deploy vars
         id: vars
