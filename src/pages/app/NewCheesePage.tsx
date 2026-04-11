@@ -283,6 +283,7 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
     const srcHalfW = 60 * scaleX;
     const srcHalfH = 60 * scaleY;
 
+    // clearRect makes pixels transparent → CSS background (cross-hatch) shows through
     ctx.clearRect(0, 0, 160, 160);
 
     // Clip everything to the circular loupe boundary
@@ -291,20 +292,8 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
     ctx.arc(80, 80, 80, 0, Math.PI * 2);
     ctx.clip();
 
-    // Cross-hatch background — visible for areas outside image bounds
-    ctx.fillStyle = "#1e1e1e";
-    ctx.fillRect(0, 0, 160, 160);
-    ctx.save();
-    ctx.strokeStyle = "#3d3d3d";
-    ctx.lineWidth = 1.5;
-    const hatchStep = 14;
-    for (let i = -160; i < 320; i += hatchStep) {
-      ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i + 160, 160); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(i, 160); ctx.lineTo(i + 160, 0); ctx.stroke();
-    }
-    ctx.restore();
-
-    // Draw only the valid image region (clamp source rect to image bounds)
+    // Draw only the valid image region (clamp source rect to image bounds).
+    // Pixels outside the image remain transparent, revealing the CSS cross-hatch background.
     const srcLeft = imgX - srcHalfW;
     const srcTop = imgY - srcHalfH;
     const srcRight = imgX + srcHalfW;
@@ -373,10 +362,12 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [drawLoupe]);
 
-  const onMove = useCallback((e: React.PointerEvent) => {
+  const onMove = useCallback((e: PointerEvent) => {
     if (dragging === null || !imgSize) return;
     e.preventDefault();
-    const [x, y] = getPos(e);
+    const rect = containerRef.current!.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
     // Clamp handles to image bounds
     const cx = Math.max(0, Math.min(imgSize.w, x));
     const cy = Math.max(0, Math.min(imgSize.h, y));
@@ -393,18 +384,19 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
     setLoupeVisible(false);
   }, []);
 
-  // Global pointerup/cancel handler so releasing the pointer outside the
-  // container (e.g. over the Retake button) doesn't trigger unintended clicks
+  // Global pointer handlers so move/up fire even when pointer leaves the container
   useEffect(() => {
     if (dragging === null) return;
     const end = () => stopDrag();
+    window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", end);
     window.addEventListener("pointercancel", end);
     return () => {
+      window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", end);
       window.removeEventListener("pointercancel", end);
     };
-  }, [dragging, stopDrag]);
+  }, [dragging, stopDrag, onMove]);
 
   const handleCrop = async () => {
     const img = imgRef.current;
@@ -437,7 +429,14 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
         className="fixed left-1/2 -translate-x-1/2 z-50 rounded-full border-2 border-amber-400 shadow-xl overflow-hidden"
         style={{ top: "64px", visibility: loupeVisible ? "visible" : "hidden" }}
       >
-        <canvas ref={loupeRef} width={160} height={160} />
+        <canvas
+          ref={loupeRef}
+          width={160}
+          height={160}
+          style={{
+            background: "repeating-linear-gradient(45deg, #1e1e1e 0px, #1e1e1e 6px, #353535 6px, #353535 12px), repeating-linear-gradient(-45deg, #1e1e1e 0px, #1e1e1e 6px, #353535 6px, #353535 12px)",
+          }}
+        />
       </div>
 
       <p className="text-sm text-gray-500">
@@ -450,7 +449,6 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
           ref={containerRef}
           className="relative touch-none select-none"
           style={{ display: "inline-block", overflow: "visible" }}
-          onPointerMove={onMove}
           onPointerUp={stopDrag}
         >
           <img
