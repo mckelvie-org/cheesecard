@@ -420,9 +420,18 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
     }
   };
 
+  // Always-clamped corners for display — belt-and-suspenders in case onMove
+  // fails to clamp (e.g. stale closure, missed events, etc.)
+  const dispCorners: [number, number][] = imgSize
+    ? corners.map(([x, y]) => [
+        Math.max(0, Math.min(imgSize.w, x)),
+        Math.max(0, Math.min(imgSize.h, y)),
+      ] as [number, number])
+    : corners;
+
   // Even-odd path: full image rect minus the quad = dark region outside selection
   const dimPath = imgSize
-    ? `M0,0 H${imgSize.w} V${imgSize.h} H0 Z M${corners.map(([x, y]) => `${x},${y}`).join(" L")} Z`
+    ? `M0,0 H${imgSize.w} V${imgSize.h} H0 Z M${dispCorners.map(([x, y]) => `${x},${y}`).join(" L")} Z`
     : "";
 
   return (
@@ -506,13 +515,13 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
               )}
               {/* Quad outline */}
               <polygon
-                points={corners.map(([x, y]) => `${x},${y}`).join(" ")}
+                points={dispCorners.map(([x, y]) => `${x},${y}`).join(" ")}
                 fill="none"
                 stroke="#f59e0b"
                 strokeWidth="2"
               />
               {/* Corner handles — center tracks the clamped corner position */}
-              {corners.map(([x, y], i) => (
+              {dispCorners.map(([x, y], i) => (
                 <circle
                   key={i}
                   cx={x}
