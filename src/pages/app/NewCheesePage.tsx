@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/auth-context";
@@ -283,7 +283,6 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
     const srcHalfW = 60 * scaleX;
     const srcHalfH = 60 * scaleY;
 
-    // clearRect makes pixels transparent → CSS background (cross-hatch) shows through
     ctx.clearRect(0, 0, 160, 160);
 
     // Clip everything to the circular loupe boundary
@@ -292,8 +291,20 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
     ctx.arc(80, 80, 80, 0, Math.PI * 2);
     ctx.clip();
 
+    // Cross-hatch background — drawn in canvas so it works on iOS Safari
+    // (CSS background on <canvas> doesn't reliably show through transparent pixels there)
+    ctx.fillStyle = "#1e1e1e";
+    ctx.fillRect(0, 0, 160, 160);
+    ctx.save();
+    ctx.strokeStyle = "#383838";
+    ctx.lineWidth = 1.5;
+    for (let i = -160; i < 320; i += 14) {
+      ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i + 160, 160); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(i, 160); ctx.lineTo(i + 160, 0); ctx.stroke();
+    }
+    ctx.restore();
+
     // Draw only the valid image region (clamp source rect to image bounds).
-    // Pixels outside the image remain transparent, revealing the CSS cross-hatch background.
     const srcLeft = imgX - srcHalfW;
     const srcTop = imgY - srcHalfH;
     const srcRight = imgX + srcHalfW;
@@ -354,7 +365,6 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
   const startDrag = useCallback((e: React.PointerEvent, index: number) => {
     e.preventDefault();
     e.stopPropagation();
-    (e.currentTarget as Element).setPointerCapture(e.pointerId);
     setDragging(index);
     setLoupeVisible(true);
     const pos = getPos(e);
@@ -362,16 +372,14 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [drawLoupe]);
 
-  const onMove = useCallback((e: PointerEvent) => {
+  const onMove = useCallback((e: React.PointerEvent) => {
     if (dragging === null || !imgSize) return;
     e.preventDefault();
     const rect = containerRef.current!.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-    // Clamp handles to image bounds
     const cx = Math.max(0, Math.min(imgSize.w, x));
     const cy = Math.max(0, Math.min(imgSize.h, y));
-    // Sync ref before drawing so edge lines see the updated corner position
     const newCorners = cornersRef.current.map((c, i) => i === dragging ? [cx, cy] : c) as [number, number][];
     cornersRef.current = newCorners;
     setCorners(newCorners);
@@ -383,20 +391,6 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
     setDragging(null);
     setLoupeVisible(false);
   }, []);
-
-  // Global pointer handlers so move/up fire even when pointer leaves the container
-  useEffect(() => {
-    if (dragging === null) return;
-    const end = () => stopDrag();
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", end);
-    window.addEventListener("pointercancel", end);
-    return () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", end);
-      window.removeEventListener("pointercancel", end);
-    };
-  }, [dragging, stopDrag, onMove]);
 
   const handleCrop = async () => {
     const img = imgRef.current;
@@ -424,6 +418,18 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
 
   return (
     <div className="space-y-3">
+      {/* Full-screen overlay while dragging — covers buttons so pointer release
+          can't accidentally trigger Retake. Works around iOS SVG pointer-capture quirks. */}
+      {dragging !== null && (
+        <div
+          className="fixed inset-0 z-40 touch-none"
+          style={{ cursor: "grabbing" }}
+          onPointerMove={onMove}
+          onPointerUp={stopDrag}
+          onPointerCancel={stopDrag}
+        />
+      )}
+
       {/* Loupe: fixed to viewport top-center, always in DOM so ref is valid */}
       <div
         className="fixed left-1/2 -translate-x-1/2 z-50 rounded-full border-2 border-amber-400 shadow-xl overflow-hidden"
@@ -449,7 +455,6 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
           ref={containerRef}
           className="relative touch-none select-none"
           style={{ display: "inline-block", overflow: "visible" }}
-          onPointerUp={stopDrag}
         >
           <img
             ref={imgRef}
