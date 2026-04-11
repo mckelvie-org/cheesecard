@@ -234,6 +234,8 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
   const cornersRef = useRef<[number, number][]>([[0, 0], [1, 0], [1, 1], [0, 1]]);
   const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
   const [dragging, setDragging] = useState<number | null>(null);
+  const [overlayActive, setOverlayActive] = useState(false);
+  const overlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [loupeVisible, setLoupeVisible] = useState(false);
   const [detecting, setDetecting] = useState(true);
   const [applying, setApplying] = useState(false);
@@ -373,7 +375,9 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
     e.preventDefault();
     e.stopPropagation();
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current);
     setDragging(best);
+    setOverlayActive(true);
     setLoupeVisible(true);
     const cx = Math.max(0, Math.min(imgSize.w, px));
     const cy = Math.max(0, Math.min(imgSize.h, py));
@@ -399,6 +403,8 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
   const stopDrag = useCallback(() => {
     setDragging(null);
     setLoupeVisible(false);
+    // Keep overlay alive briefly to absorb any stray click from iOS pointercancel
+    overlayTimerRef.current = setTimeout(() => setOverlayActive(false), 300);
   }, []);
 
   const handleCrop = async () => {
@@ -438,10 +444,10 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
     <div className="flex flex-col flex-1 min-h-0 gap-3">
       {/* Full-screen overlay while dragging — covers buttons so pointer release
           can't accidentally trigger Retake. Works around iOS SVG pointer-capture quirks. */}
-      {dragging !== null && (
+      {overlayActive && (
         <div
           className="fixed inset-0 z-40 touch-none"
-          style={{ cursor: "grabbing" }}
+          style={{ cursor: dragging !== null ? "grabbing" : "default" }}
           onPointerMove={onMove}
           onPointerUp={stopDrag}
           onPointerCancel={stopDrag}
