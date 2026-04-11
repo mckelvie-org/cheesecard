@@ -357,20 +357,29 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
     ctx.stroke();
   }, []);
 
-  const getPos = (e: React.PointerEvent): [number, number] => {
-    const rect = containerRef.current!.getBoundingClientRect();
-    return [e.clientX - rect.left, e.clientY - rect.top];
-  };
+  const HANDLE_R = 22;
 
-  const startDrag = useCallback((e: React.PointerEvent, index: number) => {
+  // onPointerDown on the SVG element — find the closest corner within tap radius
+  const onSvgPointerDown = useCallback((e: React.PointerEvent<SVGSVGElement>) => {
+    if (!imgSize) return;
+    const [px, py] = [e.clientX - containerRef.current!.getBoundingClientRect().left,
+                      e.clientY - containerRef.current!.getBoundingClientRect().top];
+    let best = -1, bestDist = HANDLE_R * 2; // generous tap target
+    cornersRef.current.forEach(([cx, cy], i) => {
+      const d = Math.hypot(px - cx, py - cy);
+      if (d < bestDist) { bestDist = d; best = i; }
+    });
+    if (best < 0) return;
     e.preventDefault();
     e.stopPropagation();
-    setDragging(index);
+    (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    setDragging(best);
     setLoupeVisible(true);
-    const pos = getPos(e);
-    drawLoupe(pos[0], pos[1], index);
+    const cx = Math.max(0, Math.min(imgSize.w, px));
+    const cy = Math.max(0, Math.min(imgSize.h, py));
+    drawLoupe(cx, cy, best);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [drawLoupe]);
+  }, [imgSize, drawLoupe]);
 
   const onMove = useCallback((e: React.PointerEvent) => {
     if (dragging === null || !imgSize) return;
@@ -476,7 +485,11 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
               className="absolute top-0 left-0"
               width={imgSize.w}
               height={imgSize.h}
-              style={{ overflow: "visible" }}
+              style={{ overflow: "visible", touchAction: "none", cursor: dragging !== null ? "grabbing" : "default" }}
+              onPointerDown={onSvgPointerDown}
+              onPointerMove={onMove}
+              onPointerUp={stopDrag}
+              onPointerCancel={stopDrag}
             >
               {/* Darken outside the selected quad */}
               <path d={dimPath} fill="rgba(0,0,0,0.45)" fillRule="evenodd" />
@@ -498,18 +511,17 @@ function CornerAdjustView({ imageFile, imageUrl, onConfirm, onRetake }: CornerAd
                 stroke="#f59e0b"
                 strokeWidth="2"
               />
-              {/* Corner handles — r=22 for easy touch targeting */}
+              {/* Corner handles — center tracks the clamped corner position */}
               {corners.map(([x, y], i) => (
                 <circle
                   key={i}
                   cx={x}
                   cy={y}
-                  r={22}
+                  r={HANDLE_R}
                   fill="rgba(245,158,11,0.8)"
                   stroke="white"
                   strokeWidth="2.5"
-                  style={{ cursor: "grab", touchAction: "none" }}
-                  onPointerDown={(e) => startDrag(e, i)}
+                  style={{ pointerEvents: "none" }}
                 />
               ))}
             </svg>
